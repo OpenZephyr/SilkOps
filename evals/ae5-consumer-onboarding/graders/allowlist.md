@@ -1,6 +1,6 @@
 ---
 type: regex
-pattern: 'allowlist|allow-list'
+pattern: 'RESULT:[^\n]*(?:allowlist|allow-list)'
 match: contains
 target: last_message
 ---

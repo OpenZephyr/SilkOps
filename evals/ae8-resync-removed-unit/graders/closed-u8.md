@@ -1,6 +1,6 @@
 ---
 type: regex
-pattern: 'U8[\s\S]*(closed|close)'
+pattern: 'RESULT:[^\n]*(?:U8[\s\S]*(closed|close))'
 match: contains
 target: last_message
 ---

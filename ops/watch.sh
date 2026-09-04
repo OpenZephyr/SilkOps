@@ -64,6 +64,7 @@ if [ -n "$MR" ] && [ -n "$PIPE" ]; then usage "pass exactly one of --mr or --pip
 [[ "$WAIT" =~ ^[0-9]+$ ]] || usage "--wait must be a number of seconds"
 [[ "$INTERVAL" =~ ^[1-9][0-9]*$ ]] || usage "--interval must be a positive number of seconds"
 if [ "$NOTE" = true ] && [ -z "$MR" ]; then usage "--note needs --mr (notes are posted on the merge request)"; fi
+require_ci_token   # top level, so the exit-3 JSON and message reach the real streams (the wrappers re-check)
 
 ENC="$(urlenc "$PROJECT")"
 OPS="$SILKOPS_ROOT/ops"

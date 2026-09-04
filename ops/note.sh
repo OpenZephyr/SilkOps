@@ -6,7 +6,8 @@
 #
 # The note body is marker + optional `<!-- silkops:key=<k> -->` + the file verbatim.
 # With --dedupe-key, a note already carrying the same plan/unit marker and key yields
-# ok + existing:true and nothing is posted. Session identity, never the settings token.
+# ok + existing:true and nothing is posted; a failed note listing aborts (exit 1 lookup_failed)
+# rather than posting a possible duplicate. Session identity, never the settings token.
 set -euo pipefail
 # shellcheck source=lib/prelude.sh
 . "$(dirname "$0")/lib/prelude.sh"
@@ -40,6 +41,7 @@ if [ -n "$ISSUE" ] && [ -n "$MR" ]; then usage "pass exactly one of --issue or -
 [[ "$ISSUE$MR" =~ ^[0-9]+$ ]] || usage "--issue/--mr must be an iid"
 [ -n "$UNIT" ] && [ -n "$PLAN" ] && [ -n "$RUN" ] || usage "--marker-unit, --plan and --run are required"
 [ -n "$BODY_FILE" ] && [ -f "$BODY_FILE" ] || usage "--body-file must name a readable file"
+require_ci_token   # top level, so the exit-3 JSON and message reach the real streams (the wrappers re-check)
 
 ENC="$(urlenc "$PROJECT")"
 if [ -n "$ISSUE" ]; then NOTEABLE=issue; IID="$ISSUE"; NPATH="projects/$ENC/issues/$IID/notes"
@@ -49,11 +51,15 @@ KEYLINE=""; [ -n "$KEY" ] && KEYLINE="<!-- silkops:key=$KEY -->"$'\n'
 # The body stays a JSON object end to end: $(...) would strip the file's final newline.
 NOTE_JSON="$(jq -Rsc --arg pre "$MARKER$KEYLINE" '{body: ($pre + .)}' <"$BODY_FILE")"
 IDENT="$(jq -cn --arg n "$NOTEABLE" --argjson iid "$IID" '{noteable: $n, iid: $iid}')"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/silkops-note.XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
 
 if [ -n "$KEY" ]; then
-  NOTES="$(api_get "$NPATH?per_page=100" 2>/dev/null || echo '[]')"
-  EXISTING="$(printf '%s' "$NOTES" | jq -c --arg p "$PLAN" --arg u "$UNIT" --arg k "<!-- silkops:key=$KEY -->" \
-    '[.[] | select((.body // "") | contains("<!-- silkops:") and contains("plan=\($p) unit=\($u) run=") and contains($k))] | first // null')"
+  # The listing is what the no-duplicate promise rests on: a failed GET aborts, it is never
+  # read as "no notes yet". Without --dedupe-key no listing is made at all.
+  api_get "$NPATH?per_page=100" >"$TMP/notes.json" 2>"$TMP/lookup.err" \
+    || fail "$EX_OTHER" lookup_failed "could not list the notes of $NOTEABLE $IID for dedupe key '$KEY'; refusing to write without a successful lookup: $(redact <"$TMP/lookup.err" | tr '\n' ' ')" "$IDENT"
+  EXISTING="$(jq -c --arg p "$PLAN" --arg u "$UNIT" --arg k "<!-- silkops:key=$KEY -->" \
+    '[.[] | select((.body // "") | contains("<!-- silkops:") and contains("plan=\($p) unit=\($u) run=") and contains($k))] | first // null' "$TMP/notes.json")"
   if [ "$EXISTING" != null ]; then
     result "$(jq -cn --argjson i "$IDENT" --argjson e "$EXISTING" --arg k "$KEY" '$i + {existing: true, id: $e.id, dedupe_key: $k}')"
     exit 0
@@ -63,7 +69,6 @@ if [ "$DRY" = true ]; then
   result "$(jq -cn --argjson i "$IDENT" --argjson n "$NOTE_JSON" '$i + {dry_run: true, existing: false, proposed: $n}')"
   exit 0
 fi
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/silkops-note.XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
 printf '%s\n' "$NOTE_JSON" >"$TMP/body.json"
 RESP="$(glab_ro api -X POST "$NPATH" --input "$TMP/body.json")" || fail "$EX_OTHER" note_failed "could not post the note on $NOTEABLE $IID" "$IDENT"
 result "$(jq -cn --argjson i "$IDENT" --argjson r "$RESP" --arg k "$KEY" '$i + {existing: false, id: $r.id} + (if $k != "" then {dedupe_key: $k} else {} end)')"

@@ -34,5 +34,11 @@ run --project "$P" --milestone "nope"
 run --milestone "x"
 [ "$(cat "$SCRATCH/rc")" = 2 ] && [ ! -s "$SCRATCH/log" ] && pass "T5 missing --project exits 2 before any glab call" || fail "T5" "rc=$(cat "$SCRATCH/rc")"
 
+printf 'only ops/issue-upsert.sh --project x ran here\n' >"$SCRATCH/clean.log"
+run --project "$P" --milestone "Surveillance & Triage" --transcript "$SCRATCH/clean.log"
+if [ "$(cat "$SCRATCH/rc")" = 0 ] && [ "$(jq -r '.transcript_hits | length' "$SCRATCH/out")" = 0 ]; then pass "T6 clean transcript -> exit 0, zero hits"; else fail "T6" "rc=$(cat "$SCRATCH/rc") $(cat "$SCRATCH/out" "$SCRATCH/err")"; fi
+run --milestone "x" --project
+if [ "$(cat "$SCRATCH/rc")" = 2 ] && [ "$(jq -r .error "$SCRATCH/out")" = usage ]; then pass "T7 --project without a value -> exit 2 usage JSON"; else fail "T7" "rc=$(cat "$SCRATCH/rc") $(cat "$SCRATCH/out")"; fi
+
 echo "test-audit-milestone: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

@@ -35,6 +35,7 @@ while [ $# -gt 0 ]; do
 done
 require_project
 [ -n "$CMD" ] || usage "subcommand required: get | add"
+require_ci_token   # top level, so the exit-3 JSON and message reach the real streams (the wrappers re-check)
 
 ENC="$(urlenc "$PROJECT")"
 LIST_P="projects/$ENC/job_token_scope/allowlist"

@@ -1,6 +1,6 @@
 ---
 type: regex
-pattern: 'needs Maintainer on'
+pattern: 'RESULT:[^\n]*(?:needs Maintainer on)'
 match: contains
 target: last_message
 ---

@@ -42,5 +42,15 @@ else fail "N5" "rc=$(rc_of n5) out=$(out_of n5)"; fi
 run_case n6 note -- --project "$PROJECT" --issue 12 --mr 7 "${ARGS[@]}"
 if [ "$(rc_of n6)" = 2 ] && [ "$(calls_of n6)" = 0 ]; then pass "N6 both --issue and --mr exits 2"; else fail "N6" "rc=$(rc_of n6)"; fi
 
+run_case n7 note-lookup-500 -- --project "$PROJECT" --issue 12 "${ARGS[@]}" --dedupe-key verify-2
+if [ "$(rc_of n7)" = 1 ] && out_of n7 | jq -e '.ok == false and .error == "lookup_failed" and .iid == 12' >/dev/null && [ "$(writes_of n7)" = 0 ] && ! grep -F 'glpat-stubsecret' "$SCRATCH/n7/out.log" "$SCRATCH/n7/err.log" >/dev/null; then
+  pass "N7 dedupe listing 500 -> exit 1 lookup_failed, nothing posted, stub token redacted"
+else fail "N7" "rc=$(rc_of n7) out=$(out_of n7) writes=$(writes_of n7)"; fi
+
+run_case n8 note CI=true -- --project "$PROJECT" --issue 12 "${ARGS[@]}"
+if [ "$(rc_of n8)" = 3 ] && out_of n8 | jq -e '.error == "no_token"' >/dev/null && err_of n8 | grep SILKOPS_CI_TOKEN >/dev/null && [ "$(calls_of n8)" = 0 ]; then
+  pass "N8 CI without SILKOPS_CI_TOKEN -> visible exit 3 (JSON + message), zero glab calls"
+else fail "N8" "rc=$(rc_of n8) out=$(out_of n8) err=$(err_of n8 | tail -1)"; fi
+
 echo "test-note: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

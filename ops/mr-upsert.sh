@@ -8,7 +8,8 @@
 # Finds the open MR for --source; updates only the marker-managed region of its
 # description (text outside is byte-identical), or creates the MR via the API.
 # Reports iid, web_url, action created|updated|unchanged and the head pipeline id.
-# Session identity (the operator authors the MR), never the settings token.
+# Session identity (the operator authors the MR), never the settings token. A failed MR
+# listing aborts (exit 1 lookup_failed): nothing is created without a successful lookup.
 set -euo pipefail
 # shellcheck source=lib/prelude.sh
 . "$(dirname "$0")/lib/prelude.sh"
@@ -42,6 +43,7 @@ require_project
 [ -n "$SRC" ] && [ -n "$TGT" ] || usage "--source and --target are required"
 [ -n "$TITLE" ] || usage "--title is required"
 [ -n "$DESC_FILE" ] && [ -f "$DESC_FILE" ] || usage "--description-file must name a readable file"
+require_ci_token   # top level, so the exit-3 JSON and message reach the real streams (the wrappers re-check)
 
 ENC="$(urlenc "$PROJECT")"
 MARKER="$(silkops_marker "$PLAN" "$UNIT" "$RUN")"; MARKER="${MARKER%$'\n'}"
@@ -49,8 +51,10 @@ BODY="$(cat "$DESC_FILE")"
 if [ "$DRAFT" = true ]; then case "$TITLE" in "Draft: "*) ;; *) TITLE="Draft: $TITLE" ;; esac; fi
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/silkops-mr.XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
 
-FOUND="$(api_get "projects/$ENC/merge_requests?source_branch=$(urlenc "$SRC")&state=opened&per_page=10" 2>/dev/null || echo '[]')"
-FOUND="$(printf '%s' "$FOUND" | jq -c --arg t "$TGT" '([.[] | select(.target_branch == $t)] | first) // (first // null)')"
+# A failed listing must never read as "no open MR" — that is how a branch gets two MRs.
+api_get "projects/$ENC/merge_requests?source_branch=$(urlenc "$SRC")&state=opened&per_page=10" >"$TMP/open.json" 2>"$TMP/lookup.err" \
+  || fail "$EX_OTHER" lookup_failed "could not list the open MRs for $SRC in $PROJECT; refusing to write without a successful lookup: $(redact <"$TMP/lookup.err" | tr '\n' ' ')"
+FOUND="$(jq -c --arg t "$TGT" '([.[] | select(.target_branch == $t)] | first) // (first // null)' "$TMP/open.json")"
 
 # head_pipeline_of <iid> <json-or-null> — the list payload may omit head_pipeline.
 head_pipeline_of() {

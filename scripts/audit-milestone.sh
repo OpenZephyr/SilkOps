@@ -15,9 +15,9 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PROJECT=""; MILESTONE=""; TRANSCRIPT=""; STRICT=false
 while [ $# -gt 0 ]; do
   case "$1" in
-    --project) PROJECT="${2:-}"; shift 2 ;;
-    --milestone) MILESTONE="${2:-}"; shift 2 ;;
-    --transcript) TRANSCRIPT="${2:-}"; shift 2 ;;
+    --project) [ $# -ge 2 ] || fail "$EX_USAGE" usage "--project needs a value"; PROJECT="$2"; shift 2 ;;
+    --milestone) [ $# -ge 2 ] || fail "$EX_USAGE" usage "--milestone needs a value"; MILESTONE="$2"; shift 2 ;;
+    --transcript) [ $# -ge 2 ] || fail "$EX_USAGE" usage "--transcript needs a value"; TRANSCRIPT="$2"; shift 2 ;;
     --strict) STRICT=true; shift ;;
     *) fail "$EX_USAGE" usage "unknown argument: $1" ;;
   esac
@@ -41,7 +41,8 @@ if [ -n "$TRANSCRIPT" ]; then
   [ -f "$TRANSCRIPT" ] || fail "$EX_NOT_FOUND" not_found "transcript not found: $TRANSCRIPT"
   # Hand-written glue: glab api / curl against the instance outside ops/. Lines that mention
   # ops/ scripts are the harness itself and do not count.
-  hits="$(grep -nE '(^|[^/a-z])(glab api|curl )' "$TRANSCRIPT" | grep -vE 'ops/[a-z-]+\.(sh|py)' | redact | jq -R -s -c 'split("\n") | map(select(length > 0))')"
+  # grep exits 1 on no match; a clean transcript is the success case, not a failure (pipefail).
+  hits="$({ grep -nE '(^|[^/a-z])(glab api|curl )' "$TRANSCRIPT" || [ $? -eq 1 ]; } | { grep -vE 'ops/[a-z-]+\.(sh|py)' || [ $? -eq 1 ]; } | redact | jq -R -s -c 'split("\n") | map(select(length > 0))')"
 fi
 res="$(jq -n --argjson ms "$ms" --argjson u "$unmarked" --argjson h "$hits" --argjson c "$checked" \
   '{milestone: {id: $ms.id, title: $ms.title, web_url: $ms.web_url}, checked: $c, unmarked: $u, transcript_hits: $h,

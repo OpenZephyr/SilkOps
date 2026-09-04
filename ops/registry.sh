@@ -40,6 +40,7 @@ require_project
 CMD="${POS[0]:-}"; IMAGE="${POS[1]:-}"
 [ -n "$IMAGE" ] || usage "<image> is required"
 case "$IMAGE" in .|/) REPO="$PROJECT" ;; *) REPO="$PROJECT/${IMAGE#/}" ;; esac
+require_ci_token   # top level, so the exit-3 JSON and message reach the real streams (the wrappers re-check)
 ENC="$(urlenc "$PROJECT")"
 
 # --- reads via glab (session identity) ---------------------------------------

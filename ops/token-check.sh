@@ -38,6 +38,9 @@ while [ $# -gt 0 ]; do
 done
 require_project
 case "$FOR" in settings|ci|session) ;; *) usage "--for must be settings, ci or session (got: $FOR)" ;; esac
+# --for session reads through glab_ro, which needs the CI token in CI: check at top level so the
+# exit-3 JSON and message reach the real streams (the other identities carry their own check).
+[ "$FOR" != session ] || require_ci_token
 
 # api <path> — GET under the identity being checked. Token presence is checked
 # by the wrapper (exit 3) before glab is ever spawned.

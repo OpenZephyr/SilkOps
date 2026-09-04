@@ -21,7 +21,10 @@ tier1:
     - python3 ops/render-runbook.py --check
     # Verification gate: no merge verb, no protected-branch write, anywhere in skills/ or ops/.
     # token-check.sh's read of protected_branches is the one sanctioned hit.
+    - bash scripts/gate-no-merge.sh --self-test
     - bash scripts/gate-no-merge.sh
+    # plugin.json and marketplace.json must agree on the version (release.sh checks the tag against plugin.json).
+    - test "$(jq -r .version .claude-plugin/plugin.json)" = "$(jq -r '.plugins[0].version' .claude-plugin/marketplace.json)"
 
 manifest:
   stage: test
@@ -29,8 +32,7 @@ manifest:
   script:
     - npm install -g @anthropic-ai/claude-code >/dev/null 2>&1
     - claude plugin validate --strict .
-    - test "$(jq -r .version .claude-plugin/plugin.json)" = "$(jq -r '.plugins[0].version' .claude-plugin/marketplace.json)"
-  allow_failure: true   # the CLI install is the flaky part; validate also runs locally before every tag
+  allow_failure: true   # only the CLI install/validate is allowed to flake; the version parity check gates in tier1
 
 release:
   stage: release

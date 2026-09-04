@@ -1,6 +1,6 @@
 ---
 type: regex
-pattern: '"retried":\s*\[\s*\]'
+pattern: 'RESULT:[^\n]*(?:"retried":\s*\[\s*\])'
 match: contains
 target: last_message
 ---

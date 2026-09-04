@@ -35,13 +35,37 @@ if [ "$(rc_of s3)" = 7 ] && out_of s3 | jq -e '.error == "cron_too_frequent"' >/
   pass "S3 create with a too-frequent cron exits 7 before any write"
 else fail "S3" "rc=$(rc_of s3) writes=$(writes_of s3)"; fi
 
+# S4: `--var K=V` is refused (values never go on argv) before any glab call
 run_case s4 schedule $TOK -- --project "$PROJECT" create --description weekly --cron '0 6 * * 1' --ref main --timezone UTC --var FOO=bar
-if [ "$(rc_of s4)" = 0 ] && out_of s4 | jq -e '.ok == true and .action == "created" and .id == 32 and .owner.username == "aqua" and .next_run_at != null and (.variables | length) == 1' >/dev/null \
-  && [ "$(writes_of s4)" = 2 ] && log_of s4 | grep -E -- '-X POST .*/pipeline_schedules .*token=set' >/dev/null \
-  && log_of s4 | grep -E -- '-X POST .*/pipeline_schedules/32/variables .*token=set' >/dev/null \
-  && ! grep 'glpat-' "$SCRATCH/s4/glab.log" "$SCRATCH/s4/out.log" "$SCRATCH/s4/err.log" >/dev/null; then
-  pass "S4 create: schedule + variable POSTs under the settings token; owner and next_run_at reported"
-else fail "S4" "rc=$(rc_of s4) out=$(out_of s4) log=$(log_of s4 | tr '\n' ';')"; fi
+if [ "$(rc_of s4)" = 2 ] && out_of s4 | jq -e '.ok == false and .error == "usage"' >/dev/null && err_of s4 | grep -i 'argv' >/dev/null && [ "$(calls_of s4)" = 0 ]; then
+  pass "S4 create --var K=V exits 2 (values never go on argv) before any glab call"
+else fail "S4" "rc=$(rc_of s4) err=$(err_of s4 | tail -1) calls=$(calls_of s4)"; fi
+
+# S4b: --var-file carries the value by file; it appears in the POST body and nowhere else
+SVAL='Sched3dSecretValue=='
+SVF="$SCRATCH/sched-var.txt"; printf '%s\n' "$SVAL" >"$SVF"
+sleaked() { grep -F "$2" "$SCRATCH/$1/glab.log" "$SCRATCH/$1/out.log" "$SCRATCH/$1/err.log" 2>/dev/null; }
+run_case s4b schedule $TOK -- --project "$PROJECT" create --description weekly --cron '0 6 * * 1' --ref main --timezone UTC --var-file "FOO=$SVF"
+if [ "$(rc_of s4b)" = 0 ] && out_of s4b | jq -e '.ok == true and .action == "created" and .id == 32 and .owner.username == "aqua" and .next_run_at != null and .variables == [{key: "FOO"}]' >/dev/null \
+  && [ "$(writes_of s4b)" = 2 ] && log_of s4b | grep -E -- '-X POST .*/pipeline_schedules .*token=set' >/dev/null \
+  && log_of s4b | grep -E -- '-X POST .*/pipeline_schedules/32/variables .*token=set input=present' >/dev/null \
+  && body_of s4b 1 | jq -e --arg v "$SVAL" '.body == {key: "FOO", value: $v}' >/dev/null \
+  && ! sleaked s4b "$SVAL" >/dev/null && ! sleaked s4b 'glpat-' >/dev/null; then
+  pass "S4b create --var-file: schedule + variable POSTs under the settings token; value only in the --input body, keys-only report"
+else fail "S4b" "rc=$(rc_of s4b) out=$(out_of s4b) body=$(body_of s4b 1 2>/dev/null) log=$(log_of s4b | tr '\n' ';') leak=$(sleaked s4b "$SVAL" | head -1)"; fi
+
+# S4c: --var-env reads SILKOPS_SCHEDULE_VAR_<K> from the environment
+run_case s4c schedule $TOK "SILKOPS_SCHEDULE_VAR_FOO=$SVAL" -- --project "$PROJECT" create --description weekly --cron '0 6 * * 1' --ref main --var-env FOO
+if [ "$(rc_of s4c)" = 0 ] && body_of s4c 1 | jq -e --arg v "$SVAL" '.body == {key: "FOO", value: $v}' >/dev/null && ! sleaked s4c "$SVAL" >/dev/null; then
+  pass "S4c create --var-env: value from SILKOPS_SCHEDULE_VAR_FOO reaches the body and nothing else"
+else fail "S4c" "rc=$(rc_of s4c) out=$(out_of s4c) err=$(err_of s4c | tail -1)"; fi
+
+# S4d: a missing --var-file or unset --var-env fails before the schedule is created
+run_case s4d schedule $TOK -- --project "$PROJECT" create --description weekly --cron '0 6 * * 1' --ref main --var-file "FOO=$SCRATCH/does-not-exist"
+run_case s4e schedule $TOK -- --project "$PROJECT" create --description weekly --cron '0 6 * * 1' --ref main --var-env FOO
+if [ "$(rc_of s4d)" = 2 ] && [ "$(writes_of s4d)" = 0 ] && [ "$(rc_of s4e)" = 2 ] && [ "$(writes_of s4e)" = 0 ] && err_of s4e | grep SILKOPS_SCHEDULE_VAR_FOO >/dev/null; then
+  pass "S4d/e missing var file / unset var env -> exit 2 before any write"
+else fail "S4de" "d=$(rc_of s4d)/$(writes_of s4d) e=$(rc_of s4e)/$(writes_of s4e)"; fi
 
 run_case s5 schedule -- --project "$PROJECT" list
 if [ "$(rc_of s5)" = 0 ] && out_of s5 | jq -e '.ok == true and .schedules[0].owner.username == "aqua" and .schedules[0].next_run_at == "2026-09-04T22:00:00.000Z" and .schedules[0].cron == "0 22 * * *"' >/dev/null \

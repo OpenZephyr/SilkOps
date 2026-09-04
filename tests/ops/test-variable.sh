@@ -72,5 +72,34 @@ if [ "$(rc_of v10)" = 0 ] && out_of v10 | jq -e '.ok == true and .dry_run == tru
   pass "V10 dry-run shows proposed flags (never the value) and writes nothing"
 else fail "V10" "rc=$(rc_of v10) out=$(out_of v10)"; fi
 
+# V11: rotating an existing masked+protected variable with no flags must keep both flags
+run_case v11 variable $TOK -- --project "$PROJECT" set --key EXISTING --value-file "$VF"
+if [ "$(rc_of v11)" = 0 ] && out_of v11 | jq -e '.ok == true and .action == "updated"' >/dev/null && [ "$(writes_of v11)" = 1 ] \
+  && body_of v11 1 | jq -e '.method == "PUT" and .body.key == "EXISTING" and .body.masked == true and .body.protected == true' >/dev/null && ! leaked v11 "$SECRET" >/dev/null; then
+  pass "V11 set on an existing masked+protected variable without flags -> PUT body inherits masked:true protected:true"
+else fail "V11" "rc=$(rc_of v11) out=$(out_of v11) body=$(body_of v11 1 2>/dev/null | jq -c 'del(.body.value)')"; fi
+
+# V12: unmasking an existing masked variable is refused without --allow-unmask
+run_case v12 variable $TOK -- --project "$PROJECT" set --key EXISTING --value-file "$VF" --unmasked
+if [ "$(rc_of v12)" = 7 ] && out_of v12 | jq -e '.ok == false and .error == "unmask_refused" and .key == "EXISTING" and .proposed.masked == false and (.current | has("value") | not)' >/dev/null && [ "$(writes_of v12)" = 0 ] && ! leaked v12 s3cr3t >/dev/null; then
+  pass "V12 --unmasked on a masked variable -> exit 7 unmask_refused, zero writes, no value leaked"
+else fail "V12" "rc=$(rc_of v12) out=$(out_of v12) writes=$(writes_of v12)"; fi
+run_case v12b variable $TOK -- --project "$PROJECT" set --key EXISTING --value-file "$VF" --unprotected
+if [ "$(rc_of v12b)" = 7 ] && out_of v12b | jq -e '.error == "unprotect_refused"' >/dev/null && [ "$(writes_of v12b)" = 0 ]; then
+  pass "V12b --unprotected on a protected variable -> exit 7 unprotect_refused, zero writes"
+else fail "V12b" "rc=$(rc_of v12b) out=$(out_of v12b)"; fi
+
+# V13: --allow-unmask lets the downgrade through; protected still inherited
+run_case v13 variable $TOK -- --project "$PROJECT" set --key EXISTING --value-file "$VF" --unmasked --allow-unmask
+if [ "$(rc_of v13)" = 0 ] && [ "$(writes_of v13)" = 1 ] && body_of v13 1 | jq -e '.body.masked == false and .body.protected == true' >/dev/null; then
+  pass "V13 --unmasked --allow-unmask -> PUT masked:false with protected:true inherited"
+else fail "V13" "rc=$(rc_of v13) out=$(out_of v13) body=$(body_of v13 1 2>/dev/null | jq -c 'del(.body.value)')"; fi
+
+# V14: dry-run on an existing variable shows current vs proposed flags (inherited) and writes nothing
+run_case v14 variable $TOK -- --project "$PROJECT" set --key EXISTING --value-file "$VF" --dry-run
+if [ "$(rc_of v14)" = 0 ] && out_of v14 | jq -e '.dry_run == true and .action == "updated" and .flags.current == {masked: true, protected: true} and .flags.proposed == {masked: true, protected: true}' >/dev/null && [ "$(writes_of v14)" = 0 ] && ! leaked v14 s3cr3t >/dev/null; then
+  pass "V14 dry-run on an existing variable reports current vs proposed flags, nothing written"
+else fail "V14" "rc=$(rc_of v14) out=$(out_of v14)"; fi
+
 echo "test-variable: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

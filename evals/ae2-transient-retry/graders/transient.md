@@ -1,6 +1,6 @@
 ---
 type: regex
-pattern: '"transient":\s*true'
+pattern: 'RESULT:[^\n]*(?:"transient":\s*true)'
 match: contains
 target: last_message
 ---

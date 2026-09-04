@@ -21,5 +21,5 @@ Known unknowns to verify on the first run (the eval runner has no public docs ye
   stable targets; `tiny:1.0.0-r1` must be pushed to its registry for AE4/AE5.
 
 Graders cannot run shell commands, so state is verified by asking the agent to end with
-`RESULT: <json>` from the harness's own read primitives and matching that line (regex), plus
+`RESULT: <json>` from the harness's own read primitives and matching that line (regex graders are anchored on `RESULT:` so prose elsewhere in the message cannot satisfy them), plus
 `llm` graders over the trace for the never-merge and no-settings-write properties.

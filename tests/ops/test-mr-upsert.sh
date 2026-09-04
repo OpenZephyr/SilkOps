@@ -41,5 +41,15 @@ else fail "M4" "rc=$(rc_of m4) out=$(out_of m4) writes=$(writes_of m4)"; fi
 run_case m5 mr-open -- --project "$PROJECT" --source feat/u4 --target main --title t
 if [ "$(rc_of m5)" = 2 ] && [ "$(calls_of m5)" = 0 ]; then pass "M5 missing --description-file exits 2"; else fail "M5" "rc=$(rc_of m5)"; fi
 
+run_case m6 mr-lookup-500 -- --project "$PROJECT" "${ARGS[@]}"
+if [ "$(rc_of m6)" = 1 ] && out_of m6 | jq -e '.ok == false and .error == "lookup_failed"' >/dev/null && [ "$(writes_of m6)" = 0 ] && ! grep -F 'glpat-stubsecret' "$SCRATCH/m6/out.log" "$SCRATCH/m6/err.log" >/dev/null; then
+  pass "M6 MR listing 500 -> exit 1 lookup_failed, no MR created, stub token redacted"
+else fail "M6" "rc=$(rc_of m6) out=$(out_of m6) writes=$(writes_of m6)"; fi
+
+run_case m7 mr-open CI=true -- --project "$PROJECT" "${ARGS[@]}"
+if [ "$(rc_of m7)" = 3 ] && out_of m7 | jq -e '.error == "no_token"' >/dev/null && err_of m7 | grep SILKOPS_CI_TOKEN >/dev/null && [ "$(calls_of m7)" = 0 ]; then
+  pass "M7 CI without SILKOPS_CI_TOKEN -> visible exit 3 (JSON + message), zero glab calls"
+else fail "M7" "rc=$(rc_of m7) out=$(out_of m7) err=$(err_of m7 | tail -1)"; fi
+
 echo "test-mr-upsert: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

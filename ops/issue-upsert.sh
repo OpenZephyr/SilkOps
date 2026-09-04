@@ -4,13 +4,17 @@
 # Usage: issue-upsert.sh --project <group/project> --marker-unit <U-ID> --plan <basename>
 #          --run <id> --title <t> --body-file <f> [--milestone <title|id>] [--labels a,b] [--dry-run]
 #
-# Identity: the marker `<!-- silkops: v=… plan=<basename> unit=<U-ID> run=… -->` in the
-# description, then the label `u<N>`; never the title. A closed issue is never edited
-# (exit 7). An open one has ONLY its managed region replaced (text outside is byte-
-# identical) and the marker's run= refreshed; an identical region means zero writes.
+# Identity: the marker `<!-- silkops: v=… plan=<basename> unit=<U-ID> run=… -->` as a whole
+# line of the description (an open match beats a closed one; two open matches refuse), then
+# the label `u<N>` restricted to issues with no silkops marker at all or a marker of THIS plan
+# (and of --milestone when given; two candidates refuse); never the title. A lookup that
+# fails aborts the run: nothing is written without a successful search. A closed issue is
+# never edited (exit 7). An open one has ONLY its managed region replaced (text outside is
+# byte-identical) and the marker's run= refreshed; an identical region means zero writes.
 # Not found → created with body = marker + managed region wrapping the body file.
 # Session identity (the operator authors the issue), never the settings token.
-# Exit: 0 ok · 2 usage · 5 milestone not found · 7 closed issue · 1 other.
+# Exit: 0 ok · 2 usage · 3 token missing (CI) · 5 milestone not found
+#       7 closed issue / ambiguous identity · 1 other (lookup or write failed).
 set -euo pipefail
 # shellcheck source=lib/prelude.sh
 . "$(dirname "$0")/lib/prelude.sh"
@@ -42,6 +46,7 @@ require_project
 [ -n "$UNIT" ] && [ -n "$PLAN" ] && [ -n "$RUN" ] || usage "--marker-unit, --plan and --run are required"
 [ -n "$TITLE" ] || usage "--title is required"
 [ -n "$BODY_FILE" ] && [ -f "$BODY_FILE" ] || usage "--body-file must name a readable file"
+require_ci_token   # top level, so the exit-3 JSON and message reach the real streams (the wrappers re-check)
 
 ENC="$(urlenc "$PROJECT")"
 MARKER="$(silkops_marker "$PLAN" "$UNIT" "$RUN")"; MARKER="${MARKER%$'\n'}"
@@ -49,25 +54,59 @@ BODY="$(cat "$BODY_FILE")"
 ULABEL="$(printf '%s' "$UNIT" | tr '[:upper:]' '[:lower:]')"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/silkops-upsert.XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
 
-# --- find: marker first, then label u<N> ------------------------------------
-SEARCH="$(urlenc "plan=$PLAN unit=$UNIT")"
-FOUND="$(api_get "projects/$ENC/issues?search=$SEARCH&in=description&state=all&scope=all&per_page=100" 2>/dev/null || echo '[]')"
-FOUND="$(printf '%s' "$FOUND" | jq -c --arg p "$PLAN" --arg u "$UNIT" \
-  '[.[] | select((.description // "") | contains("<!-- silkops:") and contains("plan=\($p) unit=\($u) run="))] | first // null')"
-if [ "$FOUND" = null ]; then
-  FOUND="$(api_get "projects/$ENC/issues?labels=$(urlenc "$ULABEL")&state=all&scope=all&per_page=100" 2>/dev/null || echo '[]')"
-  FOUND="$(printf '%s' "$FOUND" | jq -c 'first // null')"
-fi
+# lookup <what> <api-path> <out-file> — GET into a file or abort: a failed search must never
+# read as "not found" (that is how duplicates get created). Called at top level, never inside
+# $(...), so the failure JSON and message reach the real streams; stderr is redacted into them.
+lookup() {
+  api_get "$2" >"$3" 2>"$TMP/lookup.err" \
+    || fail "$EX_OTHER" lookup_failed "could not $1; refusing to write without a successful lookup: $(redact <"$TMP/lookup.err" | tr '\n' ' ')"
+}
+# jq prelude: rq quotes a literal for use inside a regex; marker_line(re) is true when some
+# whole line of .description matches re (a marker merely quoted mid-line does not count).
+JQ_DEFS='def rq: gsub("(?<c>[\\\\.^$*+?()\\[\\]{}|])"; "\\\(.c)");
+  def marker_line(re): (.description // "") | split("\n") | map(rtrimstr("\r")) | any(test(re));'
 
 # --- milestone → id ---------------------------------------------------------
 MILESTONE_ID=null
 if [ -n "$MILESTONE" ]; then
   if [[ "$MILESTONE" =~ ^[0-9]+$ ]]; then MILESTONE_ID="$MILESTONE"
   else
-    MS="$(api_get "projects/$ENC/milestones?title=$(urlenc "$MILESTONE")&include_parent_milestones=true" 2>/dev/null || echo '[]')"
-    MILESTONE_ID="$(printf '%s' "$MS" | jq -r --arg t "$MILESTONE" '[.[] | select(.title == $t)] | first | .id // "null"')"
+    lookup "look up milestone '$MILESTONE' in $PROJECT" "projects/$ENC/milestones?title=$(urlenc "$MILESTONE")&include_parent_milestones=true" "$TMP/milestones.json"
+    MILESTONE_ID="$(jq -r --arg t "$MILESTONE" '[.[] | select(.title == $t)] | first | .id // "null"' "$TMP/milestones.json")"
     [ "$MILESTONE_ID" != null ] || fail "$EX_NOT_FOUND" not_found "milestone not found: $MILESTONE"
   fi
+fi
+
+# --- find: marker first, then label u<N> ------------------------------------
+SEARCH="$(urlenc "plan=$PLAN unit=$UNIT")"
+lookup "search $PROJECT issues for the marker plan=$PLAN unit=$UNIT" "projects/$ENC/issues?search=$SEARCH&in=description&state=all&scope=all&per_page=100" "$TMP/by-marker.json"
+# Whole-line marker matches; open ones first. Two open matches → nobody can say which is the
+# unit's issue → refuse. A closed match alone still surfaces (and is refused below as closed).
+CANDS="$(jq -c --arg p "$PLAN" --arg u "$UNIT" "$JQ_DEFS"'
+  [.[] | select(marker_line("^<!-- silkops: v=[^ ]+ plan=\($p | rq) unit=\($u | rq) run=[^ ]+ -->$"))]
+  | if any(.state == "opened") then map(select(.state == "opened")) else . end' "$TMP/by-marker.json")"
+# ambiguous <message-prefix> — exit 7 naming every candidate iid.
+ambiguous() {
+  local iids extra
+  iids="$(printf '%s' "$CANDS" | jq -r 'map(.iid | tostring) | join(", ")')"
+  extra="$(printf '%s' "$CANDS" | jq -c '{candidates: map({iid, state, web_url})}')"
+  fail "$EX_REFUSED" ambiguous_identity "$1: iids $iids; fix the identity by hand before re-syncing" "$extra"
+}
+[ "$(printf '%s' "$CANDS" | jq -r 'map(select(.state == "opened")) | length')" -le 1 ] \
+  || ambiguous "more than one open issue carries the marker plan=$PLAN unit=$UNIT"
+FOUND="$(printf '%s' "$CANDS" | jq -c 'first // null')"
+if [ "$FOUND" = null ]; then
+  lookup "list $PROJECT issues labelled $ULABEL" "projects/$ENC/issues?labels=$(urlenc "$ULABEL")&state=all&scope=all&per_page=100" "$TMP/by-label.json"
+  # The label is unit-only, so another plan's issue for the same unit number carries it too:
+  # adopt only issues with no silkops marker at all (human-written) or a marker of THIS plan,
+  # on --milestone when one was given.
+  CANDS="$(jq -c --arg p "$PLAN" --argjson ms "$MILESTONE_ID" "$JQ_DEFS"'
+    [.[] | select((((.description // "") | contains("<!-- silkops:")) | not)
+                  or marker_line("^<!-- silkops: v=[^ ]+ plan=\($p | rq) unit=[^ ]+ run=[^ ]+ -->$"))
+         | select($ms == null or .milestone.id == $ms)]' "$TMP/by-label.json")"
+  [ "$(printf '%s' "$CANDS" | jq -r length)" -le 1 ] \
+    || ambiguous "more than one issue labelled $ULABEL could be unit $UNIT of $PLAN"
+  FOUND="$(printf '%s' "$CANDS" | jq -c 'first // null')"
 fi
 
 if [ "$FOUND" != null ]; then

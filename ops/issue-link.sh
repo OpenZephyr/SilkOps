@@ -36,6 +36,7 @@ require_project
 [[ "$SOURCE" =~ ^[0-9]+$ ]] || usage "--source must be an issue iid"
 [[ "$TARGET" =~ ^[0-9]+$ ]] || usage "--target must be an issue iid"
 case "$TYPE" in blocks|relates_to) ;; *) usage "--type must be blocks or relates_to (got: $TYPE)" ;; esac
+require_ci_token   # top level, so the exit-3 JSON and message reach the real streams (the wrappers re-check)
 
 ENC="$(urlenc "$PROJECT")"
 PROJ="$(api_get "projects/$ENC" 2>/dev/null)" || fail "$EX_NOT_FOUND" not_found "project not found or not visible: $PROJECT"

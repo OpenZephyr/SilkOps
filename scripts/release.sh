@@ -4,6 +4,8 @@
 # registry as silkops-harness/X.Y.Z/silkops-harness-X.Y.Z.tar.gz (plan KTD10).
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# shellcheck source=../ops/lib/prelude.sh
+. ops/lib/prelude.sh   # xtrace refusal + redaction; the token never touches argv
 tag="${CI_COMMIT_TAG:?run on a silkops-harness--vX.Y.Z tag}"
 version="${tag#silkops-harness--v}"
 manifest_version="$(jq -r .version .claude-plugin/plugin.json)"
@@ -16,7 +18,7 @@ git archive --format=tar.gz --prefix="silkops-harness-${version}/" -o "dist/${na
 cat "dist/${name}.sha256"
 base="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/silkops-harness/${version}"
 for f in "$name" "${name}.sha256"; do
-  # JOB-TOKEN header, never in the URL.
-  curl -fsS --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file "dist/${f}" "${base}/${f}" >/dev/null
+  # JOB-TOKEN header via a curl config on stdin (`-K -`): never in the URL, never on argv.
+  printf 'header = "JOB-TOKEN: %s"\n' "${CI_JOB_TOKEN}" | curl -fsS -K - --upload-file "dist/${f}" "${base}/${f}" >/dev/null
   echo "uploaded ${base}/${f}"
 done

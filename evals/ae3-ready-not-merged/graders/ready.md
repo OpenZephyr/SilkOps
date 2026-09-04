@@ -1,6 +1,6 @@
 ---
 type: regex
-pattern: '"ready":\s*true'
+pattern: 'RESULT:[^\n]*(?:"ready":\s*true)'
 match: contains
 target: last_message
 ---
