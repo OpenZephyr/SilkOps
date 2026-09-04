@@ -50,7 +50,7 @@ fi
 
 # --- set --------------------------------------------------------------------
 [[ "$KEY" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || usage "--key must match [A-Za-z_][A-Za-z0-9_]*"
-[ -n "${SILKOPS_SETTINGS_TOKEN:-}" ] || fail "$EX_NO_TOKEN" no_token "SILKOPS_SETTINGS_TOKEN is not set (required to change variables on $PROJECT)"
+require_settings_token "required to change variables on $PROJECT"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/silkops-variable.XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
 # The value becomes a JSON document on disk (0700 dir) and never a shell word passed
 # to a child process: read via jq's stdin or env, checked and shaped by jq.

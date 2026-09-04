@@ -66,18 +66,7 @@ if [ "$FOUND" != null ]; then
   IID="$(printf '%s' "$FOUND" | jq -r '.iid')"
   WEB="$(printf '%s' "$FOUND" | jq -r '.web_url // ""')"
   IDENT="$(jq -cn --argjson iid "$IID" --arg w "$WEB" --arg s "$SRC" --arg t "$TGT" '{iid: $iid, web_url: $w, source_branch: $s, target_branch: $t}')"
-  PLANNED="$(printf '%s' "$FOUND" | jq -c --arg body "$BODY" --arg marker "$MARKER" --arg run "$RUN" '(.description // "") as $d |
-    "<!-- silkops:managed -->" as $open | "<!-- /silkops:managed -->" as $close
-    | ("\n" + $body + "\n") as $inner
-    | if ($d | contains($open)) and ($d | contains($close)) then
-        ($d | split($open)) as $a | ($a[1:] | join($open) | split($close)) as $b
-        | {changed: ($b[0] != $inner),
-           description: (($a[0] | sub("(?<m><!-- silkops: v=[^ ]+ plan=[^ ]+ unit=[^ ]+ run=)[^ ]+ -->"; "\(.m)\($run) -->"))
-                         + $open + $inner + $close + ($b[1:] | join($close)))}
-      else
-        {changed: true,
-         description: ($d + (if ($d == "" or ($d | endswith("\n"))) then "" else "\n" end) + $marker + "\n" + $open + $inner + $close + "\n")}
-      end')"
+  PLANNED="$(managed_region_plan "$FOUND" "$BODY" "$MARKER" "$RUN")"
   HP="$(head_pipeline_of "$IID" "$FOUND")"
   if [ "$(printf '%s' "$PLANNED" | jq -r '.changed')" = false ]; then
     result "$(jq -cn --argjson i "$IDENT" --argjson hp "$HP" '$i + {action: "unchanged", head_pipeline_id: $hp}')"

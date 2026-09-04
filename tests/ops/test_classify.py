@@ -2,9 +2,7 @@
 """Tests for ops/classify-failure.py (U4, KTD6/KTD7): fact matching against
 cleaned trace lines and the `silkops: no-retry-after=` immutability guard."""
 
-import json
 import os
-import sys
 import tempfile
 import unittest
 
@@ -15,7 +13,6 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 OPS = os.path.join(REPO_ROOT, "ops")
 TRACES = os.path.join(REPO_ROOT, "tests", "fixtures", "traces")
 FACTS = os.path.join(REPO_ROOT, "facts", "environment.json")
-CICD_PLANS = "/Users/poelyte/Documents/a-Dev/ci-cd/docs/plans"
 
 
 def trace(name):

@@ -8,6 +8,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=../ops/lib/prelude.sh
 . "$ROOT/ops/lib/prelude.sh"
+# shellcheck source=../ops/lib/token.sh
+. "$ROOT/ops/lib/token.sh"
 # shellcheck source=../ops/lib/glab.sh
 . "$ROOT/ops/lib/glab.sh"
 PROJECT=""; MILESTONE=""; TRANSCRIPT=""; STRICT=false

@@ -74,7 +74,7 @@ case "$CMD" in
     [ -n "$DESC" ] && [ -n "$CRON" ] && [ -n "$REF" ] || usage "create needs --description, --cron and --ref"
     validate
     if [ "$DRY" = false ]; then
-      [ -n "${SILKOPS_SETTINGS_TOKEN:-}" ] || fail "$EX_NO_TOKEN" no_token "SILKOPS_SETTINGS_TOKEN is not set (required to create a schedule on $PROJECT)"
+      require_settings_token "required to create a schedule on $PROJECT"
     fi
     KEYS="$(printf '%s\n' "${VARS[@]+"${VARS[@]}"}" | jq -Rc '[select(. != "") | {key: split("=")[0]}]' | jq -sc 'add // []')"
     PROPOSED="$(jq -cn --arg d "$DESC" --arg c "$CRON" --arg r "$REF" --arg tz "$TZ_NAME" --argjson v "$KEYS" --argjson f "$FREQUENT" \

@@ -56,7 +56,7 @@ fi
 # --- add --------------------------------------------------------------------
 [ -n "$CONSUMER" ] || usage "add needs --consumer <group/project>"
 if [ "$DRY" = false ]; then
-  [ -n "${SILKOPS_SETTINGS_TOKEN:-}" ] || fail "$EX_NO_TOKEN" no_token "SILKOPS_SETTINGS_TOKEN is not set (required to change the allow-list of $PROJECT)"
+  require_settings_token "required to change the allow-list of $PROJECT"
 fi
 CENC="$(urlenc "$CONSUMER")"
 if [ "$GROUP" = true ]; then

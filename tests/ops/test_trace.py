@@ -3,7 +3,6 @@
 
 import os
 import re
-import sys
 import tempfile
 import unittest
 
@@ -14,7 +13,6 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 OPS = os.path.join(REPO_ROOT, "ops")
 TRACES = os.path.join(REPO_ROOT, "tests", "fixtures", "traces")
 FACTS = os.path.join(REPO_ROOT, "facts", "environment.json")
-CICD_PLANS = "/Users/poelyte/Documents/a-Dev/ci-cd/docs/plans"
 
 
 def trace(name):

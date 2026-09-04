@@ -71,7 +71,7 @@ esac
 # --- retag via the v2 API (settings token, curl -K -) ------------------------
 TAG="${POS[2]}"; NEW="${POS[3]}"
 [ "$TAG" != "$NEW" ] || usage "<tag> and <new-tag> are the same"
-[ -n "${SILKOPS_SETTINGS_TOKEN:-}" ] || fail "$EX_NO_TOKEN" no_token "SILKOPS_SETTINGS_TOKEN is not set (required to write to the registry)"
+require_settings_token "required to write to the registry"
 REGISTRY="${SILKOPS_REGISTRY_HOST:-registry.gitlab.com}"
 ACCEPT='application/vnd.docker.distribution.manifest.v2+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.oci.image.index.v1+json'
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/silkops-registry.XXXXXX")"; trap 'rm -rf "$TMP"' EXIT

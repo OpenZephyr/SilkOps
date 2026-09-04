@@ -42,3 +42,9 @@ with_ci_token() {
     || fail "$EX_NO_TOKEN" no_token "SILKOPS_CI_TOKEN is not set (required for the CI identity)"
   _with_token "$SILKOPS_CI_TOKEN" "$@"
 }
+
+# require_settings_token <message> — fail-fast (exit 3) before any read or dry-run work when
+# the settings token is absent; with_settings_token re-checks at the write itself.
+require_settings_token() {
+  [ -n "${SILKOPS_SETTINGS_TOKEN:-}" ] || fail "$EX_NO_TOKEN" no_token "SILKOPS_SETTINGS_TOKEN is not set ($1)"
+}

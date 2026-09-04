@@ -54,6 +54,25 @@ redact() {
     -e 's/oauth2:[^@[:space:]]+@/oauth2:<REDACTED>@/g'
 }
 
+# managed_region_plan <object-json> <body> <marker> <run> — plan the KTD5 description
+# update for an issue or MR: only the text between the managed-region markers changes and
+# the marker's run= is refreshed; without a region (object written by a human, found by
+# label) the marker + region are appended. Prints {had_region, changed, description}.
+managed_region_plan() {
+  printf '%s' "$1" | jq -c --arg body "$2" --arg marker "$3" --arg run "$4" '(.description // "") as $d |
+    "<!-- silkops:managed -->" as $open | "<!-- /silkops:managed -->" as $close
+    | ("\n" + $body + "\n") as $inner
+    | if ($d | contains($open)) and ($d | contains($close)) then
+        ($d | split($open)) as $a | ($a[1:] | join($open) | split($close)) as $b
+        | {had_region: true, changed: ($b[0] != $inner),
+           description: (($a[0] | sub("(?<m><!-- silkops: v=[^ ]+ plan=[^ ]+ unit=[^ ]+ run=)[^ ]+ -->"; "\(.m)\($run) -->"))
+                         + $open + $inner + $close + ($b[1:] | join($close)))}
+      else
+        {had_region: false, changed: true,
+         description: ($d + (if ($d == "" or ($d | endswith("\n"))) then "" else "\n" end) + $marker + "\n" + $open + $inner + $close + "\n")}
+      end'
+}
+
 # result <json> — emit exactly one JSON object on stdout. `ok:true` is added
 # unless the object already carries `ok`. Invalid or non-object input is a
 # programming error: nothing reaches stdout and the script exits 1.

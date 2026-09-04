@@ -79,18 +79,7 @@ if [ "$FOUND" != null ]; then
 
   # New description: only the managed region changes; the marker's run= is refreshed.
   # Without a region (found by label, written by a human), append marker + region.
-  PLANNED="$(printf '%s' "$FOUND" | jq -c --arg body "$BODY" --arg marker "$MARKER" --arg run "$RUN" '(.description // "") as $d |
-    "<!-- silkops:managed -->" as $open | "<!-- /silkops:managed -->" as $close
-    | ("\n" + $body + "\n") as $inner
-    | if ($d | contains($open)) and ($d | contains($close)) then
-        ($d | split($open)) as $a | ($a[1:] | join($open) | split($close)) as $b
-        | {had_region: true, changed: ($b[0] != $inner),
-           description: (($a[0] | sub("(?<m><!-- silkops: v=[^ ]+ plan=[^ ]+ unit=[^ ]+ run=)[^ ]+ -->"; "\(.m)\($run) -->"))
-                         + $open + $inner + $close + ($b[1:] | join($close)))}
-      else
-        {had_region: false, changed: true,
-         description: ($d + (if ($d == "" or ($d | endswith("\n"))) then "" else "\n" end) + $marker + "\n" + $open + $inner + $close + "\n")}
-      end')"
+  PLANNED="$(managed_region_plan "$FOUND" "$BODY" "$MARKER" "$RUN")"
   if [ "$(printf '%s' "$PLANNED" | jq -r '.changed')" = false ]; then
     result "$(jq -cn --argjson i "$IDENT" '$i + {action: "unchanged"}')"
     exit 0

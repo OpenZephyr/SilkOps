@@ -2,7 +2,6 @@
 """Tests for ops/plan-units.py (U4): unit extraction from unified plans."""
 
 import os
-import sys
 import tempfile
 import unittest
 
