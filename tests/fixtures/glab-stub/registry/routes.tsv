@@ -1,0 +1,5 @@
+GET	projects/void-realm-solutions%2Fsilkops-harness-eval	../u4-common/project.json
+GET	user	../u4-common/user.json
+GET	projects/*/registry/repositories[?]*	../u4-common/registry-repos.json
+GET	projects/*/registry/repositories/55/tags/v2	../u4-common/registry-tag.json
+GET	projects/*/registry/repositories/55/tags/*	../u4-common/manifest-404.json	404

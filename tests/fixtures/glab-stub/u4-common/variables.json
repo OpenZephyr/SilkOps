@@ -1,0 +1,1 @@
+[{"variable_type":"env_var","key":"EXISTING","value":"s3cr3t-value-should-never-print","protected":true,"masked":true,"raw":false,"environment_scope":"*"},{"variable_type":"file","key":"KUBECONFIG","value":"apiVersion: v1","protected":false,"masked":false,"raw":false,"environment_scope":"*"}]

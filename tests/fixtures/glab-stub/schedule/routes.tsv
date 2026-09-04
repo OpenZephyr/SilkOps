@@ -1,0 +1,5 @@
+GET	projects/void-realm-solutions%2Fsilkops-harness-eval	../u4-common/project.json
+GET	user	../u4-common/user.json
+GET	projects/*/pipeline_schedules*	../u4-common/schedules.json
+POST	projects/*/pipeline_schedules/32/variables	../u4-common/schedule-var-created.json	201
+POST	projects/*/pipeline_schedules	../u4-common/schedule-created.json	201
