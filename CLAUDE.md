@@ -16,8 +16,8 @@ lives in `ci-cd/docs/plans/2026-09-02-2334-feat-silkops-harness-plan.md`.
 - Tokens come from the environment only (`SILKOPS_SETTINGS_TOKEN`, `SILKOPS_CI_TOKEN`) and
   are never printed, never placed in argv, never embedded in URLs. Settings tokens are
   injected only inside `with_settings_token`. Values for CI variables arrive by file or env.
-- Never merge, never push a protected branch, never call `protected_branches` endpoints,
-  never edit a closed issue. `set -x` is refused by the prelude.
+- Never merge, never push a protected branch, never write to `protected_branches` endpoints
+  (`token-check` reads them, informationally), never edit a closed issue. `set -x` is refused by the prelude.
 - Harness-written objects carry `<!-- silkops: v=… plan=… unit=… run=… -->`; issue bodies wrap
   plan-derived text in `<!-- silkops:managed -->…<!-- /silkops:managed -->`.
 - No `grep -q` on piped JSON (SIGPIPE under pipefail); use `grep >/dev/null` or `jq -e`.

@@ -1,0 +1,1 @@
+[{"id": 1, "name": "main", "push_access_levels": [{"access_level": 0, "access_level_description": "No one"}], "merge_access_levels": [{"access_level": 40, "access_level_description": "Maintainers"}], "allow_force_push": false}]

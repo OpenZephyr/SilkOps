@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Fake `glab` for offline tests. Records every invocation's argv to
+# $GLAB_STUB_LOG (one line each, plus whether GITLAB_TOKEN was set — never its
+# value) and serves canned JSON from $GLAB_STUB_SCENARIO for `glab api <path>`.
+# Unknown paths behave like glab on an HTTP error: message on stderr, exit 1.
+set -uo pipefail
+if [ -n "${GLAB_STUB_LOG:-}" ]; then
+  printf 'argv:%s token=%s\n' "$(printf ' %s' "$@")" "${GITLAB_TOKEN:+set}" >>"$GLAB_STUB_LOG"
+fi
+scenario="${GLAB_STUB_SCENARIO:-}"
+if [ "${1:-}" != "api" ]; then
+  echo "glab-stub: unsupported verb '${1:-}'" >&2; exit 1
+fi
+shift
+path=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -X|--method|-f|--field|-F|--raw-field|-H|--header) shift 2 ;;
+    -*) shift ;;
+    *) path="$1"; shift ;;
+  esac
+done
+file=""
+case "$path" in
+  user) file="user.json" ;;
+  personal_access_tokens/self) file="pat-self.json" ;;
+  projects/*/members/all/*) file="member.json" ;;
+  projects/*/protected_branches) file="protected-branches.json" ;;
+  projects/*) file="project.json" ;;
+esac
+if [ -n "$file" ] && [ -n "$scenario" ] && [ -f "$scenario/$file" ]; then
+  cat "$scenario/$file"; exit 0
+fi
+# Mimic glab's error surface, including a token-shaped string, so the
+# redaction path of the wrappers is exercised on every miss.
+echo "glab-stub: GET $path: 404 Not Found (PRIVATE-TOKEN: glpat-stubsecret0000000000)" >&2
+exit 1

@@ -1,0 +1,12 @@
+glpat	remote: HTTP Basic: Access denied for glpat-AbC123_xYz-9876543210	glpat-AbC123_xYz-9876543210
+glcbt	token glcbt-1234567890abcdefghij used	glcbt-1234567890abcdefghij
+gldt	deploy token gldt-Zz9_yY8-xX7 rejected	gldt-Zz9_yY8-xX7
+glrt	runner token glrt-runnerSECRET_1234 invalid	glrt-runnerSECRET_1234
+oauth2	fatal: unable to access 'https://oauth2:s3cr3tPASS@gitlab.com/g/p.git/'	s3cr3tPASS
+authorization	> Authorization: Bearer topsecretvalue123	topsecretvalue123
+authorization-lower	> authorization: Basic dXNlcjpwYXNz	dXNlcjpwYXNz
+private-token	curl -H "PRIVATE-TOKEN: hunter2hunter2hunter2"	hunter2hunter2hunter2
+private-token-lower	curl -H "private-token: hunter3hunter3"	hunter3hunter3
+job-token	> JOB-TOKEN: jobtokenvalue987	jobtokenvalue987
+jwt	got eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcDEF123_-xyz back	eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcDEF123_-xyz
+bearer-jwt	Bearer eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJnbCJ9.SIGsig_-123 in header	eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJnbCJ9.SIGsig_-123
