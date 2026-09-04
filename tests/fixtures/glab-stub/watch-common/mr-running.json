@@ -1,0 +1,16 @@
+{
+  "id": 9007,
+  "iid": 7,
+  "project_id": 7001,
+  "state": "opened",
+  "title": "U6 pipeline skills",
+  "source_branch": "feat/u6",
+  "target_branch": "main",
+  "web_url": "https://gitlab.com/void-realm-solutions/silkops-harness-eval/-/merge_requests/7",
+  "detailed_merge_status": "ci_still_running",
+  "head_pipeline": {
+    "id": 501,
+    "status": "running",
+    "ref": "refs/merge-requests/7/head"
+  }
+}
