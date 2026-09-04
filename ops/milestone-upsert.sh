@@ -39,7 +39,7 @@ while [ $# -gt 0 ]; do
     *) usage "unknown argument: $1" ;;
   esac
 done
-require_project
+require_project "$PROJECT"
 [ -n "$TITLE" ] || usage "--title is required"
 [ -n "$PLAN" ] && [ -n "$RUN" ] || usage "--plan and --run are required (the marker carries them)"
 [ -n "$UNIT" ] || usage "--marker-unit must not be empty"

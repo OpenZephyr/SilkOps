@@ -36,7 +36,7 @@ while [ $# -gt 0 ]; do
     *) usage "unknown argument: $1" ;;
   esac
 done
-require_project
+require_project "$PROJECT"
 case "$FOR" in settings|ci|session) ;; *) usage "--for must be settings, ci or session (got: $FOR)" ;; esac
 # --for session reads through glab_ro, which needs the CI token in CI: check at top level so the
 # exit-3 JSON and message reach the real streams (the other identities carry their own check).

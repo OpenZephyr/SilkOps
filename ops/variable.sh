@@ -48,7 +48,7 @@ while [ $# -gt 0 ]; do
     *) usage "unknown argument: $1" ;;
   esac
 done
-require_project
+require_project "$PROJECT"
 [ -n "$CMD" ] || usage "subcommand required: list | set"
 # `list` reads under the session identity (glab_ro): in CI that needs SILKOPS_CI_TOKEN — check
 # at top level so the exit-3 JSON and message reach the real streams. `set` uses the settings

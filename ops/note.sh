@@ -35,7 +35,7 @@ while [ $# -gt 0 ]; do
     *) usage "unknown argument: $1" ;;
   esac
 done
-require_project
+require_project "$PROJECT"
 if [ -n "$ISSUE" ] && [ -n "$MR" ]; then usage "pass exactly one of --issue or --mr"; fi
 [ -n "$ISSUE$MR" ] || usage "pass exactly one of --issue or --mr"
 [[ "$ISSUE$MR" =~ ^[0-9]+$ ]] || usage "--issue/--mr must be an iid"

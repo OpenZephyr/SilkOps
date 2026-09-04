@@ -36,7 +36,7 @@ while [ $# -gt 0 ]; do
     *) POS+=("$1"); shift ;;
   esac
 done
-require_project
+require_project "$PROJECT"
 CMD="${POS[0]:-}"; IMAGE="${POS[1]:-}"
 [ -n "$IMAGE" ] || usage "<image> is required"
 case "$IMAGE" in .|/) REPO="$PROJECT" ;; *) REPO="$PROJECT/${IMAGE#/}" ;; esac

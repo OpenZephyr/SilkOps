@@ -42,8 +42,8 @@ while [ $# -gt 0 ]; do
     *) usage "unknown argument: $1" ;;
   esac
 done
-require_project
-[ -n "$UNIT" ] && [ -n "$PLAN" ] && [ -n "$RUN" ] || usage "--marker-unit, --plan and --run are required"
+require_project "$PROJECT"
+if [ -z "$UNIT" ] || [ -z "$PLAN" ] || [ -z "$RUN" ]; then usage "--marker-unit, --plan and --run are required"; fi
 [ -n "$TITLE" ] || usage "--title is required"
 [ -n "$BODY_FILE" ] && [ -f "$BODY_FILE" ] || usage "--body-file must name a readable file"
 require_ci_token   # top level, so the exit-3 JSON and message reach the real streams (the wrappers re-check)

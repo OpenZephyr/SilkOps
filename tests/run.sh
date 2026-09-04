@@ -10,13 +10,15 @@ for t in "$ROOT"/tests/ops/test-*.sh; do
   [ -e "$t" ] || continue
   SUITES=$((SUITES + 1))
   echo "=== $(basename "$t")"
-  if ! bash "$t"; then FAILED=$((FAILED + 1)); FAILED_NAMES="$FAILED_NAMES $(basename "$t")"; fi
+  # Suites must not inherit the CI job's identity: GitLab sets CI=true and may expose tokens,
+  # and every suite asserts the no-token / no-network paths explicitly.
+  if ! env -u CI -u GITLAB_TOKEN -u GITLAB_HOST -u SILKOPS_CI_TOKEN -u SILKOPS_SETTINGS_TOKEN bash "$t"; then FAILED=$((FAILED + 1)); FAILED_NAMES="$FAILED_NAMES $(basename "$t")"; fi
 done
 
 if ls "$ROOT"/tests/ops/test_*.py >/dev/null 2>&1; then
   SUITES=$((SUITES + 1))
   echo "=== python unittest (tests/ops/test_*.py)"
-  if ! (cd "$ROOT" && python3 -m unittest discover -s tests/ops -p 'test_*.py'); then
+  if ! (cd "$ROOT" && env -u CI -u GITLAB_TOKEN -u SILKOPS_CI_TOKEN -u SILKOPS_SETTINGS_TOKEN python3 -m unittest discover -s tests/ops -p 'test_*.py'); then
     FAILED=$((FAILED + 1)); FAILED_NAMES="$FAILED_NAMES python-unittest"
   fi
 fi

@@ -33,7 +33,7 @@ while [ $# -gt 0 ]; do
     *) usage "unknown argument: $1" ;;
   esac
 done
-require_project
+require_project "$PROJECT"
 [ -n "$CMD" ] || usage "subcommand required: get | add"
 require_ci_token   # top level, so the exit-3 JSON and message reach the real streams (the wrappers re-check)
 

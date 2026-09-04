@@ -12,7 +12,7 @@ SCRATCH="$(mktemp -d "${SILKOPS_TEST_TMPDIR:-${TMPDIR:-/tmp}}/silkops-audit.XXXX
 cleanup() { rm -rf "$SCRATCH"; }
 trap cleanup EXIT
 export PATH="$STUB_DIR:$PATH"
-run() { rm -f "$SCRATCH/log"; env -u GITLAB_TOKEN GLAB_STUB_SCENARIO="$STUB_DIR/audit" GLAB_STUB_LOG="$SCRATCH/log" bash "$SCRIPT" "$@" >"$SCRATCH/out" 2>"$SCRATCH/err"; echo $? >"$SCRATCH/rc"; }
+run() { rm -f "$SCRATCH/log"; env -u CI -u GITLAB_TOKEN GLAB_STUB_SCENARIO="$STUB_DIR/audit" GLAB_STUB_LOG="$SCRATCH/log" bash "$SCRIPT" "$@" >"$SCRATCH/out" 2>"$SCRATCH/err"; echo $? >"$SCRATCH/rc"; }
 P="void-realm-solutions/silkops-harness-eval"
 
 run --project "$P" --milestone "Surveillance & Triage"

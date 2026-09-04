@@ -32,7 +32,7 @@ while [ $# -gt 0 ]; do
     *) usage "unknown argument: $1" ;;
   esac
 done
-require_project
+require_project "$PROJECT"
 [[ "$SOURCE" =~ ^[0-9]+$ ]] || usage "--source must be an issue iid"
 [[ "$TARGET" =~ ^[0-9]+$ ]] || usage "--target must be an issue iid"
 case "$TYPE" in blocks|relates_to) ;; *) usage "--type must be blocks or relates_to (got: $TYPE)" ;; esac

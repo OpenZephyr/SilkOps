@@ -65,7 +65,7 @@ while [ $# -gt 0 ]; do
     *) usage "unknown argument: $1" ;;
   esac
 done
-require_project
+require_project "$PROJECT"
 [ -n "$MR$PIPE" ] || usage "pass --mr <iid>, --pipeline <id>, or both (--mr with --pipeline watches that pipeline with the MR's context)"
 [ -z "$MR" ] || [[ "$MR" =~ ^[0-9]+$ ]] || usage "--mr must be a number"
 [ -z "$PIPE" ] || [[ "$PIPE" =~ ^[0-9]+$ ]] || usage "--pipeline must be a number"

@@ -46,7 +46,7 @@ while [ $# -gt 0 ]; do
     *) usage "unknown argument: $1" ;;
   esac
 done
-require_project
+require_project "$PROJECT"
 [ -n "$CMD" ] || usage "subcommand required: list | validate | create"
 # list and create read through glab_ro, which needs SILKOPS_CI_TOKEN in CI: check at top level
 # so the exit-3 JSON and message reach the real streams (validate is offline).
