@@ -117,7 +117,7 @@
    "class": "permanent",
    "retry_safe": false,
    "step": "build-harness (release-asset fetch before docker build) or any consumer pull",
-   "source": "ci-cd MR !8 pipeline, build-harness job (2026-09-04): first live fetch of the private silkops-harness release asset"
+   "source": "tasks/image-factory/.image-factory.yml:129"
   }
  ]
 }

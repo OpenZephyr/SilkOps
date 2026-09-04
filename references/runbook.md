@@ -88,7 +88,7 @@ Add a fact in `facts/environment.json`; then run `ops/render-runbook.py`.
 | `ipv6-service-alias` | permanent | no | factory-tests (resolving the dind daemon alias for the registry URL) | `tests/test-build-image.sh:45-47` |
 | `registry-listing-lag` | transient | yes | factory-tests (tag check immediately after push) | `tests/test-build-image.sh:159-162` |
 | `misfiring-cron-every-minute` | permanent | no | schedule (pipeline_schedules cron) | `tests/fixtures/api/schedule-misfiring.json` |
-| `job-token-fetch-denied` | permanent | no | build-harness (release-asset fetch before docker build) or any consumer pull | `ci-cd MR !8 pipeline, build-harness job (2026-09-04): first live fetch of the private silkops-harness release asset` |
+| `job-token-fetch-denied` | permanent | no | build-harness (release-asset fetch before docker build) or any consumer pull | `tasks/image-factory/.image-factory.yml:129` |
 
 ### `dind-service-dns`
 
