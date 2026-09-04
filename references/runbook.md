@@ -88,6 +88,7 @@ Add a fact in `facts/environment.json`; then run `ops/render-runbook.py`.
 | `ipv6-service-alias` | permanent | no | factory-tests (resolving the dind daemon alias for the registry URL) | `tests/test-build-image.sh:45-47` |
 | `registry-listing-lag` | transient | yes | factory-tests (tag check immediately after push) | `tests/test-build-image.sh:159-162` |
 | `misfiring-cron-every-minute` | permanent | no | schedule (pipeline_schedules cron) | `tests/fixtures/api/schedule-misfiring.json` |
+| `job-token-fetch-denied` | permanent | no | build-harness (release-asset fetch before docker build) or any consumer pull | `ci-cd MR !8 pipeline, build-harness job (2026-09-04): first live fetch of the private silkops-harness release asset` |
 
 ### `dind-service-dns`
 
@@ -160,5 +161,11 @@ Signature: `tag listing (can )?lag|pushed tag \S+ not (yet )?listed`
 `* 22 * * *` fires every minute of hour 22 (sixty pipelines) instead of once — `0 22 * * *` is the daily form. The silkops-factory-records schedule shipped with the misfiring cron and produced hundreds of failed main pipelines every ~25s during 22:xx local. schedule.sh refuses a cron firing more than once per day unless --allow-frequent.
 
 Signature: `^\* \d{1,2} \* \* \*$|cron[^\n]*\* 22 \* \* \*`
+
+### `job-token-fetch-denied`
+
+A cross-project fetch with CI_JOB_TOKEN (package registry asset, repository archive, registry pull) answered 404/403: the target project has not allow-listed this project under Settings > CI/CD > Job token permissions. GitLab hides the resource rather than naming the denial, so a missing allow-list looks like a missing file. A configuration pre-step, not a flake: allow-list the fetching project on the TARGET project (Maintainer there), then re-run.
+
+Signature: `curl: \(22\) The requested URL returned error: 40[34]`
 
 <!-- facts:end -->

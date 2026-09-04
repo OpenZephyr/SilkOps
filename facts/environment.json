@@ -1,114 +1,123 @@
 {
-  "schema_version": "1",
-  "description": "Recorded environment facts (KTD7). Each `pattern` is a Python regex applied to every cleaned trace line (\\r and ANSI stripped); classify-failure.py takes the first matching fact in file order, so specific signatures come first. `source` points at the ci-cd file:line the wording is lifted from. `retry_safe` is the fact's own verdict; the `silkops: no-retry-after=` declaration can still veto it.",
-  "facts": [
-    {
-      "id": "dind-service-dns",
-      "pattern": "dial tcp: lookup \\S+ on 169\\.254\\.169\\.254:53: no such host",
-      "explanation": "SaaS runners: services cannot resolve each other, so the dind daemon cannot look up the `registry` service on the SaaS resolver (169.254.169.254:53). A configuration error, not a flake: the guard suite runs its throwaway registry ON the dind daemon (host network) and pushes to the daemon's own IP over plain HTTP, with --insecure-registry for the private ranges.",
-      "class": "permanent",
-      "retry_safe": false,
-      "step": "factory-tests (dind daemon reaching the registry service)",
-      "source": ".gitlab-ci.yml:41-46"
-    },
-    {
-      "id": "docker-hub-502",
-      "pattern": "(registry-1\\.docker\\.io|docker\\.io).*(502 Bad Gateway|unexpected HTTP status: 502)",
-      "explanation": "Docker Hub flakes (seen live: 502 on the manifest fetch of aquasec/trivy) must not fail a job whose build already succeeded; scan-image.sh pulls the scanner with bounded retries (three attempts). A job retry is safe as long as nothing was pushed before the failure.",
-      "class": "transient",
-      "retry_safe": true,
-      "step": "scan-image (scanner image pull from Docker Hub)",
-      "source": "scripts/ci/scan-image.sh:48-56"
-    },
-    {
-      "id": "grep-q-sigpipe-under-pipefail",
-      "pattern": "tag_seen=false|grep -q .*SIGPIPE",
-      "explanation": "`grep -q` exits on its first match and SIGPIPEs the `jq` that feeds it; under `set -o pipefail` the pipeline then reports failure once a repo lists two tags, so the tag check read false although the tag was there. Read the full listing (`grep >/dev/null`) or use `jq -e`; never `grep -q` on piped JSON (fix: ci-cd 2dba7c3).",
-      "class": "permanent",
-      "retry_safe": false,
-      "step": "factory-tests (T4 tag check after push)",
-      "source": "tests/test-build-image.sh:159-160"
-    },
-    {
-      "id": "pull-access-denied",
-      "pattern": "pull access denied.*requested access to the resource is denied",
-      "explanation": "The factory registry inherits the project's private visibility: a consumer's job pulls a factory image only if ci-cd lists that project — or its group — under Settings → CI/CD → Job token permissions (Authorized groups and projects). The failure is fast and unambiguous, within seconds of job start. Allow-list the group once rather than each consumer; retrying changes nothing.",
-      "class": "permanent",
-      "retry_safe": false,
-      "step": "image pull at consumer job start (job-token allow-list)",
-      "source": "docs/image-catalog.md:84-88"
-    },
-    {
-      "id": "manifest-inspect-network-error",
-      "pattern": "registry query for \\S+ failed \\(cannot verify tag absence\\)",
-      "explanation": "`docker manifest inspect` exits 1 both for \"no such tag\" and for real errors; only a stderr message proving the tag is absent (no such manifest / manifest unknown / MANIFEST_UNKNOWN / NAME_UNKNOWN) may fall through — a network or auth failure is never read as \"tag absent\" (KTD2). The probe runs before any build or push, so a retry is safe.",
-      "class": "transient",
-      "retry_safe": true,
-      "step": "build-image (tag existence probe)",
-      "source": "scripts/ci/build-image.sh:89-107"
-    },
-    {
-      "id": "tag-already-exists",
-      "pattern": "already exists in the registry .*tags are immutable",
-      "explanation": "Tags are immutable: a publish onto an existing tag is refused before building. Bump the release suffix (-rN) instead of retrying; a dry run (MR build) on the same day still builds without pushing.",
-      "class": "permanent",
-      "retry_safe": false,
-      "step": "build-image (publish refusal, AE3)",
-      "source": "scripts/ci/build-image.sh:97-104"
-    },
-    {
-      "id": "bind-mount-outside-builds",
-      "pattern": "invalid mount config for type \"bind\"|bind source path does not exist|Mounts denied",
-      "explanation": "In dind CI, bind-mounted paths must live under /builds (shared with the daemon); a scratch dir in the job container's own /tmp does not exist on the daemon, so `-v` fails or mounts an empty path. FACTORY_TEST_TMPDIR points under $CI_PROJECT_DIR for this reason; locally the system tmpdir is fine.",
-      "class": "permanent",
-      "retry_safe": false,
-      "step": "factory-tests (docker run -v from the job container)",
-      "source": ".gitlab-ci.yml:53-54"
-    },
-    {
-      "id": "git-identity-missing",
-      "pattern": "Please tell me who you are|Author identity unknown|empty ident name",
-      "explanation": "CI runners have no git identity; every commit made in a job needs one. commit-records.sh sets its own via `-c user.name=silkops-factory -c user.email=factory@silkops.invalid -c commit.gpgsign=false`; the test harness exports GIT_AUTHOR_* and GIT_COMMITTER_* for its seed commits.",
-      "class": "permanent",
-      "retry_safe": false,
-      "step": "commit-records (git commit in CI)",
-      "source": "tests/test-commit-records.sh:4-7"
-    },
-    {
-      "id": "cross-project-variable-expansion",
-      "pattern": "manifest for \\S+ not found: manifest unknown|repository \\S+ not found|invalid reference format",
-      "explanation": "Cross-project includes expand variables in the CONSUMER pipeline, so `$CI_REGISTRY_IMAGE` resolves to the consumer's own (empty) registry and the factory image path comes out wrong. The factory registry must be named explicitly (FACTORY_IMAGE_ROOT: registry.gitlab.com/void-realm-solutions/ci-cd); fix the include, do not retry.",
-      "class": "permanent",
-      "retry_safe": false,
-      "step": "image resolution in a consumer pipeline (cross-project include)",
-      "source": "tasks/terraform-scanners/.terraform-scan.yml:13-16"
-    },
-    {
-      "id": "ipv6-service-alias",
-      "pattern": "dial tcp \\[[0-9a-f:]+\\]:\\d+: connect: (connection refused|network is unreachable)|too many colons in address",
-      "explanation": "The service alias also resolves to a ULA IPv6 address the registry does not listen on, and bare v6 literals break host:port URLs. Resolve IPv4 only: `getent ahostsv4 <alias> | awk '{print $1}' | head -1`.",
-      "class": "permanent",
-      "retry_safe": false,
-      "step": "factory-tests (resolving the dind daemon alias for the registry URL)",
-      "source": "tests/test-build-image.sh:45-47"
-    },
-    {
-      "id": "registry-listing-lag",
-      "pattern": "tag listing (can )?lag|pushed tag \\S+ not (yet )?listed",
-      "explanation": "The registry's tag listing can lag the push by a moment, so a check that lists tags right after `docker push` can miss the new tag. Poll briefly before calling it absent (the suite retries five times, one second apart). Note: `tag_seen=false` on its own was the grep -q/pipefail bug, matched by grep-q-sigpipe-under-pipefail.",
-      "class": "transient",
-      "retry_safe": true,
-      "step": "factory-tests (tag check immediately after push)",
-      "source": "tests/test-build-image.sh:159-162"
-    },
-    {
-      "id": "misfiring-cron-every-minute",
-      "pattern": "^\\* \\d{1,2} \\* \\* \\*$|cron[^\\n]*\\* 22 \\* \\* \\*",
-      "explanation": "`* 22 * * *` fires every minute of hour 22 (sixty pipelines) instead of once — `0 22 * * *` is the daily form. The silkops-factory-records schedule shipped with the misfiring cron and produced hundreds of failed main pipelines every ~25s during 22:xx local. schedule.sh refuses a cron firing more than once per day unless --allow-frequent.",
-      "class": "permanent",
-      "retry_safe": false,
-      "step": "schedule (pipeline_schedules cron)",
-      "source": "tests/fixtures/api/schedule-misfiring.json"
-    }
-  ]
+ "schema_version": "1",
+ "description": "Recorded environment facts (KTD7). Each `pattern` is a Python regex applied to every cleaned trace line (\\r and ANSI stripped); classify-failure.py takes the first matching fact in file order, so specific signatures come first. `source` points at the ci-cd file:line the wording is lifted from. `retry_safe` is the fact's own verdict; the `silkops: no-retry-after=` declaration can still veto it.",
+ "facts": [
+  {
+   "id": "dind-service-dns",
+   "pattern": "dial tcp: lookup \\S+ on 169\\.254\\.169\\.254:53: no such host",
+   "explanation": "SaaS runners: services cannot resolve each other, so the dind daemon cannot look up the `registry` service on the SaaS resolver (169.254.169.254:53). A configuration error, not a flake: the guard suite runs its throwaway registry ON the dind daemon (host network) and pushes to the daemon's own IP over plain HTTP, with --insecure-registry for the private ranges.",
+   "class": "permanent",
+   "retry_safe": false,
+   "step": "factory-tests (dind daemon reaching the registry service)",
+   "source": ".gitlab-ci.yml:41-46"
+  },
+  {
+   "id": "docker-hub-502",
+   "pattern": "(registry-1\\.docker\\.io|docker\\.io).*(502 Bad Gateway|unexpected HTTP status: 502)",
+   "explanation": "Docker Hub flakes (seen live: 502 on the manifest fetch of aquasec/trivy) must not fail a job whose build already succeeded; scan-image.sh pulls the scanner with bounded retries (three attempts). A job retry is safe as long as nothing was pushed before the failure.",
+   "class": "transient",
+   "retry_safe": true,
+   "step": "scan-image (scanner image pull from Docker Hub)",
+   "source": "scripts/ci/scan-image.sh:48-56"
+  },
+  {
+   "id": "grep-q-sigpipe-under-pipefail",
+   "pattern": "tag_seen=false|grep -q .*SIGPIPE",
+   "explanation": "`grep -q` exits on its first match and SIGPIPEs the `jq` that feeds it; under `set -o pipefail` the pipeline then reports failure once a repo lists two tags, so the tag check read false although the tag was there. Read the full listing (`grep >/dev/null`) or use `jq -e`; never `grep -q` on piped JSON (fix: ci-cd 2dba7c3).",
+   "class": "permanent",
+   "retry_safe": false,
+   "step": "factory-tests (T4 tag check after push)",
+   "source": "tests/test-build-image.sh:159-160"
+  },
+  {
+   "id": "pull-access-denied",
+   "pattern": "pull access denied.*requested access to the resource is denied",
+   "explanation": "The factory registry inherits the project's private visibility: a consumer's job pulls a factory image only if ci-cd lists that project \u2014 or its group \u2014 under Settings \u2192 CI/CD \u2192 Job token permissions (Authorized groups and projects). The failure is fast and unambiguous, within seconds of job start. Allow-list the group once rather than each consumer; retrying changes nothing.",
+   "class": "permanent",
+   "retry_safe": false,
+   "step": "image pull at consumer job start (job-token allow-list)",
+   "source": "docs/image-catalog.md:84-88"
+  },
+  {
+   "id": "manifest-inspect-network-error",
+   "pattern": "registry query for \\S+ failed \\(cannot verify tag absence\\)",
+   "explanation": "`docker manifest inspect` exits 1 both for \"no such tag\" and for real errors; only a stderr message proving the tag is absent (no such manifest / manifest unknown / MANIFEST_UNKNOWN / NAME_UNKNOWN) may fall through \u2014 a network or auth failure is never read as \"tag absent\" (KTD2). The probe runs before any build or push, so a retry is safe.",
+   "class": "transient",
+   "retry_safe": true,
+   "step": "build-image (tag existence probe)",
+   "source": "scripts/ci/build-image.sh:89-107"
+  },
+  {
+   "id": "tag-already-exists",
+   "pattern": "already exists in the registry .*tags are immutable",
+   "explanation": "Tags are immutable: a publish onto an existing tag is refused before building. Bump the release suffix (-rN) instead of retrying; a dry run (MR build) on the same day still builds without pushing.",
+   "class": "permanent",
+   "retry_safe": false,
+   "step": "build-image (publish refusal, AE3)",
+   "source": "scripts/ci/build-image.sh:97-104"
+  },
+  {
+   "id": "bind-mount-outside-builds",
+   "pattern": "invalid mount config for type \"bind\"|bind source path does not exist|Mounts denied",
+   "explanation": "In dind CI, bind-mounted paths must live under /builds (shared with the daemon); a scratch dir in the job container's own /tmp does not exist on the daemon, so `-v` fails or mounts an empty path. FACTORY_TEST_TMPDIR points under $CI_PROJECT_DIR for this reason; locally the system tmpdir is fine.",
+   "class": "permanent",
+   "retry_safe": false,
+   "step": "factory-tests (docker run -v from the job container)",
+   "source": ".gitlab-ci.yml:53-54"
+  },
+  {
+   "id": "git-identity-missing",
+   "pattern": "Please tell me who you are|Author identity unknown|empty ident name",
+   "explanation": "CI runners have no git identity; every commit made in a job needs one. commit-records.sh sets its own via `-c user.name=silkops-factory -c user.email=factory@silkops.invalid -c commit.gpgsign=false`; the test harness exports GIT_AUTHOR_* and GIT_COMMITTER_* for its seed commits.",
+   "class": "permanent",
+   "retry_safe": false,
+   "step": "commit-records (git commit in CI)",
+   "source": "tests/test-commit-records.sh:4-7"
+  },
+  {
+   "id": "cross-project-variable-expansion",
+   "pattern": "manifest for \\S+ not found: manifest unknown|repository \\S+ not found|invalid reference format",
+   "explanation": "Cross-project includes expand variables in the CONSUMER pipeline, so `$CI_REGISTRY_IMAGE` resolves to the consumer's own (empty) registry and the factory image path comes out wrong. The factory registry must be named explicitly (FACTORY_IMAGE_ROOT: registry.gitlab.com/void-realm-solutions/ci-cd); fix the include, do not retry.",
+   "class": "permanent",
+   "retry_safe": false,
+   "step": "image resolution in a consumer pipeline (cross-project include)",
+   "source": "tasks/terraform-scanners/.terraform-scan.yml:13-16"
+  },
+  {
+   "id": "ipv6-service-alias",
+   "pattern": "dial tcp \\[[0-9a-f:]+\\]:\\d+: connect: (connection refused|network is unreachable)|too many colons in address",
+   "explanation": "The service alias also resolves to a ULA IPv6 address the registry does not listen on, and bare v6 literals break host:port URLs. Resolve IPv4 only: `getent ahostsv4 <alias> | awk '{print $1}' | head -1`.",
+   "class": "permanent",
+   "retry_safe": false,
+   "step": "factory-tests (resolving the dind daemon alias for the registry URL)",
+   "source": "tests/test-build-image.sh:45-47"
+  },
+  {
+   "id": "registry-listing-lag",
+   "pattern": "tag listing (can )?lag|pushed tag \\S+ not (yet )?listed",
+   "explanation": "The registry's tag listing can lag the push by a moment, so a check that lists tags right after `docker push` can miss the new tag. Poll briefly before calling it absent (the suite retries five times, one second apart). Note: `tag_seen=false` on its own was the grep -q/pipefail bug, matched by grep-q-sigpipe-under-pipefail.",
+   "class": "transient",
+   "retry_safe": true,
+   "step": "factory-tests (tag check immediately after push)",
+   "source": "tests/test-build-image.sh:159-162"
+  },
+  {
+   "id": "misfiring-cron-every-minute",
+   "pattern": "^\\* \\d{1,2} \\* \\* \\*$|cron[^\\n]*\\* 22 \\* \\* \\*",
+   "explanation": "`* 22 * * *` fires every minute of hour 22 (sixty pipelines) instead of once \u2014 `0 22 * * *` is the daily form. The silkops-factory-records schedule shipped with the misfiring cron and produced hundreds of failed main pipelines every ~25s during 22:xx local. schedule.sh refuses a cron firing more than once per day unless --allow-frequent.",
+   "class": "permanent",
+   "retry_safe": false,
+   "step": "schedule (pipeline_schedules cron)",
+   "source": "tests/fixtures/api/schedule-misfiring.json"
+  },
+  {
+   "id": "job-token-fetch-denied",
+   "pattern": "curl: \\(22\\) The requested URL returned error: 40[34]",
+   "explanation": "A cross-project fetch with CI_JOB_TOKEN (package registry asset, repository archive, registry pull) answered 404/403: the target project has not allow-listed this project under Settings > CI/CD > Job token permissions. GitLab hides the resource rather than naming the denial, so a missing allow-list looks like a missing file. A configuration pre-step, not a flake: allow-list the fetching project on the TARGET project (Maintainer there), then re-run.",
+   "class": "permanent",
+   "retry_safe": false,
+   "step": "build-harness (release-asset fetch before docker build) or any consumer pull",
+   "source": "ci-cd MR !8 pipeline, build-harness job (2026-09-04): first live fetch of the private silkops-harness release asset"
+  }
+ ]
 }
