@@ -41,7 +41,7 @@ while [ $# -gt 0 ]; do
 done
 require_project "$PROJECT"
 [ -n "$TITLE" ] || usage "--title is required"
-[ -n "$PLAN" ] && [ -n "$RUN" ] || usage "--plan and --run are required (the marker carries them)"
+if [ -z "$PLAN" ] || [ -z "$RUN" ]; then usage "--plan and --run are required (the marker carries them)"; fi
 [ -n "$UNIT" ] || usage "--marker-unit must not be empty"
 if [ -n "$DESC_FILE" ]; then [ -f "$DESC_FILE" ] || usage "--description-file must name a readable file"; fi
 require_ci_token   # top level, so the exit-3 JSON and message reach the real streams (the wrappers re-check)

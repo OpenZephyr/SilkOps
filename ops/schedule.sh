@@ -83,7 +83,7 @@ case "$CMD" in
     result "$(jq -cn --arg c "$CRON" --argjson f "$FREQUENT" '{cron: $c, frequent: $f, fires_at_most_daily: ($f | not)}')"
     ;;
   create)
-    [ -n "$DESC" ] && [ -n "$CRON" ] && [ -n "$REF" ] || usage "create needs --description, --cron and --ref"
+    if [ -z "$DESC" ] || [ -z "$CRON" ] || [ -z "$REF" ]; then usage "create needs --description, --cron and --ref"; fi
     validate
     if [ "$DRY" = false ]; then
       require_settings_token "required to create a schedule on $PROJECT"

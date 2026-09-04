@@ -67,7 +67,7 @@ role_name() {
 # The token-presence check inside the wrapper fires on this first call.
 IDENTITY="$(api user)" || fail "$EX_NO_TOKEN" no_identity "could not resolve the ${FOR} identity (glab api user failed); is a token configured?"
 USER_ID="$(printf '%s' "$IDENTITY" | jq -r '.id')"
-[ -n "$USER_ID" ] && [ "$USER_ID" != null ] || fail "$EX_OTHER" bad_identity "glab api user returned no id"
+if [ -z "$USER_ID" ] || [ "$USER_ID" = null ]; then fail "$EX_OTHER" bad_identity "glab api user returned no id"; fi
 
 TOKEN_INFO="$(api_opt personal_access_tokens/self)"
 

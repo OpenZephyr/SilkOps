@@ -88,6 +88,15 @@ if [ "$(rc_of w1b)" = 0 ] && out_of w1b | jq -e '.ok == true and .ready == true 
   pass "W1b bare --pipeline: ready == success, no MR lookup"
 else fail "W1b" "rc=$(rc_of w1b) out=$(out_of w1b)"; fi
 
+run_case w17 watch-green -- "${COMMON[@]}" --mr 7 --wait 0 --sha a1b2c3d4e5f60718293a4b5c6d7e8f9012345678
+if [ "$(rc_of w17)" = 0 ] && [ "$(out_of w17 | jq -r .ready)" = true ]; then
+  pass "W17 --sha matching the head pipeline's commit -> watches it normally (ready:true)"
+else fail "W17" "rc=$(rc_of w17) out=$(out_of w17)"; fi
+run_case w17b watch-green -- "${COMMON[@]}" --mr 7 --wait 0 --sha deadbeefdeadbeefdeadbeefdeadbeefdeadbeef
+if [ "$(rc_of w17b)" = 0 ] && [ "$(out_of w17b | jq -r .still_running)" = true ] && [ "$(out_of w17b | jq -r .waiting_for_sha)" = deadbeefdeadbeefdeadbeefdeadbeefdeadbeef ] && [ "$(out_of w17b | jq -r .resume_hint)" != null ]; then
+  pass "W17b --sha not yet the head pipeline's commit, budget spent -> still_running with waiting_for_sha and a resume hint, no retry"
+else fail "W17b" "rc=$(rc_of w17b) out=$(out_of w17b)"; fi
+
 # --- usage / resolution ---------------------------------------------------------
 run_case w2 watch-green -- --mr 7
 if [ "$(rc_of w2)" = 2 ] && err_of w2 | grep -- '--project' >/dev/null && [ "$(calls_of w2)" = 0 ]; then

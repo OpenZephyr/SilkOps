@@ -45,7 +45,7 @@ done
 require_project "$PROJECT"
 if [ -z "$UNIT" ] || [ -z "$PLAN" ] || [ -z "$RUN" ]; then usage "--marker-unit, --plan and --run are required"; fi
 [ -n "$TITLE" ] || usage "--title is required"
-[ -n "$BODY_FILE" ] && [ -f "$BODY_FILE" ] || usage "--body-file must name a readable file"
+if ! { [ -n "$BODY_FILE" ] && [ -f "$BODY_FILE" ]; }; then usage "--body-file must name a readable file"; fi
 require_ci_token   # top level, so the exit-3 JSON and message reach the real streams (the wrappers re-check)
 
 ENC="$(urlenc "$PROJECT")"

@@ -47,7 +47,7 @@ set -euo pipefail
 
 usage() { fail "$EX_USAGE" usage "usage: watch.sh --project <group/project> (--mr <iid> [--pipeline <id>] | --pipeline <id>) [--wait <s>] [--interval <s>] [--retry] [--note] [--plan <basename>] [--run <id>]${1:+ — $1}"; }
 
-PROJECT=""; MR=""; PIPE=""; WAIT=300; INTERVAL=20; RETRY=false; NOTE=false
+PROJECT=""; MR=""; PIPE=""; WAIT=300; INTERVAL=20; RETRY=false; NOTE=false; SHA=""
 PLAN="-"; RUN="$(date -u +%Y%m%dT%H%M%SZ)"; ROOT_LINES=15
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -56,6 +56,7 @@ while [ $# -gt 0 ]; do
     --mr) [ $# -ge 2 ] || usage; MR="$2"; shift 2 ;;
     --pipeline) [ $# -ge 2 ] || usage; PIPE="$2"; shift 2 ;;
     --wait) [ $# -ge 2 ] || usage; WAIT="$2"; shift 2 ;;
+    --sha) [ $# -ge 2 ] || usage; SHA="$2"; shift 2 ;;   # wait until the MR head pipeline is for this commit (right after a push)
     --interval) [ $# -ge 2 ] || usage; INTERVAL="$2"; shift 2 ;;
     --plan) [ $# -ge 2 ] || usage; PLAN="$2"; shift 2 ;;
     --run) [ $# -ge 2 ] || usage; RUN="$2"; shift 2 ;;
@@ -93,6 +94,22 @@ if [ -n "$MR" ]; then
   if [ -n "$PIPE" ]; then
     PIPE_ID="$PIPE"   # resume form: this pipeline, with the MR's superseded / merge status
   else
+    # Right after a push the MR still reports the PREVIOUS head pipeline for a while; with
+    # --sha, wait (within the budget) until head_pipeline.sha is the pushed commit.
+    if [ -n "$SHA" ]; then
+      waited=0
+      while [ "$(printf '%s' "$MRJ" | jq -r '.head_pipeline.sha // ""')" != "$SHA" ]; do
+        if [ "$waited" -ge "$WAIT" ]; then
+          result "$(jq -cn --argjson iid "$MR" --arg sha "$SHA" --argjson head "$HEAD_ID" --arg hint "watch.sh --project $PROJECT --mr $MR --sha $SHA" \
+            '{mr_iid: $iid, still_running: true, waiting_for_sha: $sha, head_pipeline_id: $head, terminal: false, ready: false, resume_hint: $hint}')"
+          exit 0
+        fi
+        err "MR !$MR head pipeline is not yet for $SHA; waiting ${INTERVAL}s"
+        sleep "${SILKOPS_WATCH_SLEEP:-$INTERVAL}"; waited=$((waited + INTERVAL))
+        MRJ="$(fetch_mr)" || fail "$EX_NOT_FOUND" not_found "merge request !$MR disappeared while waiting for $SHA"
+        read_mr
+      done
+    fi
     [ "$HEAD_ID" != null ] || fail "$EX_NOT_FOUND" no_head_pipeline "merge request !$MR has no head pipeline yet" "$(jq -cn --argjson iid "$MR" --argjson u "$MR_URL" '{mr_iid: $iid, web_url: $u}')"
     PIPE_ID="$HEAD_ID"
   fi

@@ -39,10 +39,10 @@ while [ $# -gt 0 ]; do
     *) usage "unknown argument: $1" ;;
   esac
 done
-require_project
-[ -n "$SRC" ] && [ -n "$TGT" ] || usage "--source and --target are required"
+require_project "$PROJECT"
+if ! { [ -n "$SRC" ] && [ -n "$TGT" ]; }; then usage "--source and --target are required"; fi
 [ -n "$TITLE" ] || usage "--title is required"
-[ -n "$DESC_FILE" ] && [ -f "$DESC_FILE" ] || usage "--description-file must name a readable file"
+if ! { [ -n "$DESC_FILE" ] && [ -f "$DESC_FILE" ]; }; then usage "--description-file must name a readable file"; fi
 require_ci_token   # top level, so the exit-3 JSON and message reach the real streams (the wrappers re-check)
 
 ENC="$(urlenc "$PROJECT")"

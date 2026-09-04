@@ -39,8 +39,8 @@ require_project "$PROJECT"
 if [ -n "$ISSUE" ] && [ -n "$MR" ]; then usage "pass exactly one of --issue or --mr"; fi
 [ -n "$ISSUE$MR" ] || usage "pass exactly one of --issue or --mr"
 [[ "$ISSUE$MR" =~ ^[0-9]+$ ]] || usage "--issue/--mr must be an iid"
-[ -n "$UNIT" ] && [ -n "$PLAN" ] && [ -n "$RUN" ] || usage "--marker-unit, --plan and --run are required"
-[ -n "$BODY_FILE" ] && [ -f "$BODY_FILE" ] || usage "--body-file must name a readable file"
+if ! { [ -n "$UNIT" ] && [ -n "$PLAN" ] && [ -n "$RUN" ]; }; then usage "--marker-unit, --plan and --run are required"; fi
+if ! { [ -n "$BODY_FILE" ] && [ -f "$BODY_FILE" ]; }; then usage "--body-file must name a readable file"; fi
 require_ci_token   # top level, so the exit-3 JSON and message reach the real streams (the wrappers re-check)
 
 ENC="$(urlenc "$PROJECT")"
