@@ -51,5 +51,8 @@ if [ "$(rc_of m7)" = 3 ] && out_of m7 | jq -e '.error == "no_token"' >/dev/null 
   pass "M7 CI without SILKOPS_CI_TOKEN -> visible exit 3 (JSON + message), zero glab calls"
 else fail "M7" "rc=$(rc_of m7) out=$(out_of m7) err=$(err_of m7 | tail -1)"; fi
 
+run_case M8 mr-none -- --project "$PROJECT" --source feat/x --target main --title "t" --description-file "$SCRATCH/desc.md" 2>/dev/null || true
+if log_of M8 | grep -E -- '-X POST' | grep -q 'Content-Type: application/json'; then pass "M8 JSON body carries Content-Type: application/json (GitLab 415 otherwise)"; else fail "M8" "$(log_of M8 | grep -- '-X POST')"; fi
+
 echo "test-mr-upsert: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

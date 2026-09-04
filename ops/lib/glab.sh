@@ -10,12 +10,31 @@
 # Never echo argv; never build URLs containing tokens. Paths are API paths
 # relative to /api/v4 (encode ids with `urlenc`).
 
-glab_ro() {
-  require_ci_token
-  { glab "$@" 2>&1 1>&3 | redact 1>&2; } 3>&1
+# _glab_args <args…> — echo the argv glab should get. `glab api --input <file>` sends the
+# body with no Content-Type, and GitLab answers HTTP 415 for JSON bodies without one
+# (found live on the first mr-upsert of this repo), so a JSON header rides along with
+# every --input. Printed NUL-separated so arguments with spaces survive.
+_glab_args() {
+  local a has_input=false
+  for a in "$@"; do [ "$a" = "--input" ] && has_input=true; done
+  if $has_input && [ "${1:-}" = "api" ]; then
+    printf '%s\0' "api" -H "Content-Type: application/json"; shift
+  fi
+  printf '%s\0' "$@"
 }
 
-glab_settings() { with_settings_token glab "$@"; }
+glab_ro() {
+  require_ci_token
+  local -a argv=()
+  while IFS= read -r -d '' a; do argv+=("$a"); done < <(_glab_args "$@")
+  { glab "${argv[@]}" 2>&1 1>&3 | redact 1>&2; } 3>&1
+}
+
+glab_settings() {
+  local -a argv=()
+  while IFS= read -r -d '' a; do argv+=("$a"); done < <(_glab_args "$@")
+  with_settings_token glab "${argv[@]}"
+}
 
 api_get() { glab_ro api -X GET "$1"; }
 
