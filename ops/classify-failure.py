@@ -11,10 +11,14 @@ Each fact in facts/environment.json carries `id, pattern (Python regex applied t
 cleaned trace lines), explanation, class (transient|permanent), retry_safe, step, source`.
 The first fact (file order) with a hit wins; every hit is recorded. The job may declare
 its non-retryable step by printing `silkops: no-retry-after=<regex>`; when a line
-matching that regex appears BEFORE the first failure line, `retry_safe` is false whatever
-the class — the immutability guard: a retry would re-run a step past its point of no
-return (e.g. a tag already pushed). No declaration means "no declaration, retry allowed"
-and `retry_safe` follows the fact. An unknown failure is never retry-safe.
+matching that regex appears BEFORE the job's failure line (the runner's `ERROR: Job failed`,
+else the winning fact's LAST hit — anything printed before the runner gave up has executed),
+`retry_safe` is false whatever the class — the immutability guard: a retry would re-run a
+step past its point of no return (e.g. a tag already pushed). No declaration means "no
+declaration, retry allowed" and `retry_safe` follows the fact. An unknown failure is never
+retry-safe. The declaration is untrusted job output: it is capped at DECL_MAX chars, a
+shape prone to catastrophic backtracking (a quantified group or nested quantifier) is
+matched literally, and each line is cut at LINE_MAX chars before the search.
 
 Exit codes: 0 on any successful classification (the caller decides), 6 only with
 `--strict` when retry is unsafe, 2 usage, 5 trace or facts file missing, 1 other.
@@ -31,6 +35,10 @@ EX_OK, EX_OTHER, EX_USAGE, EX_NOT_FOUND, EX_RETRY_UNSAFE = 0, 1, 2, 5, 6
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_FACTS = os.path.join(os.path.dirname(HERE), "facts", "environment.json")
 HITS_CAP = 200
+DECL_MAX = 200     # longest declaration compiled as a regex
+LINE_MAX = 4096    # widest line the declared regex is searched over
+# a quantifier applied to a group, or a quantifier chained onto another (nested quantifiers)
+RISKY_DECL_RE = re.compile(r"\)[*+?{]|[*+}][*+{]|\?[*+{]")
 
 
 def _load_trace_module():
@@ -83,6 +91,21 @@ def load_facts(path):
     return compiled
 
 
+def compile_declaration(decl):
+    """The declared pattern comes from the job's own output. Compile it as a regex only when
+    it is short and free of backtracking-prone shapes; otherwise match it literally (a literal
+    match never enables a retry that the regex would have forbidden on the same line)."""
+    if decl is None:
+        return None
+    decl = decl[:DECL_MAX]
+    if RISKY_DECL_RE.search(decl):
+        return re.compile(re.escape(decl))
+    try:
+        return re.compile(decl)
+    except re.error:
+        return re.compile(re.escape(decl))
+
+
 def classify(lines, facts, facts_path):
     # declaration (first occurrence, never a `$ ` command echo)
     decl, decl_idx = None, None
@@ -91,32 +114,30 @@ def classify(lines, facts, facts_path):
         if d and not l["text"].lstrip().startswith("$ "):
             decl, decl_idx = d.group(1), idx
             break
-    decl_rx = None
-    if decl is not None:
-        try:
-            decl_rx = re.compile(decl)
-        except re.error:
-            decl_rx = re.compile(re.escape(decl))
+    decl_rx = compile_declaration(decl)
 
-    hits, winner, winner_idx = [], None, None
+    hits, winner, winner_last = [], None, None
     for fact, rx in facts:
-        first = None
+        last = None
         for idx, l in enumerate(lines):
             if rx.search(l["text"]):
-                if first is None:
-                    first = idx
+                last = idx
                 if len(hits) < HITS_CAP:
                     hits.append({"fact": fact.get("id"), "line_no": l["no"], "line": l["text"].strip()})
-        if first is not None and winner is None:
-            winner, winner_idx = fact, first
+        if last is not None and winner is None:
+            winner, winner_last = fact, last
 
-    # failure position: the winning fact's first hit, else the runner's own failure line
-    fail_idx = winner_idx
+    # failure position: the runner's own `ERROR: Job failed` line — everything before it has
+    # executed, so a marker anywhere before it must veto the retry. Without one (truncated
+    # trace) the winning fact's LAST hit; a non-fatal early hit of the same pattern (a retried
+    # pull, a warning quoting the error) must not shrink the window.
+    fail_idx = None
+    for idx, l in enumerate(lines):
+        if T.FAIL_RE.search(l["text"]):
+            fail_idx = idx
+            break
     if fail_idx is None:
-        for idx, l in enumerate(lines):
-            if T.FAIL_RE.search(l["text"]):
-                fail_idx = idx
-                break
+        fail_idx = winner_last
     if fail_idx is None:
         fail_idx = len(lines)
 
@@ -127,7 +148,7 @@ def classify(lines, facts, facts_path):
         for idx in range(0, fail_idx):
             if idx == decl_idx or T.DECL_RE.search(lines[idx]["text"]):
                 continue
-            if decl_rx.search(lines[idx]["text"]):
+            if decl_rx.search(lines[idx]["text"][:LINE_MAX]):
                 marker_idx = idx
                 break
     marker_hit = marker_idx is not None

@@ -94,8 +94,14 @@ if [ "$(rc_of w2)" = 2 ] && err_of w2 | grep -- '--project' >/dev/null && [ "$(c
   pass "W2 missing --project exits 2 before any glab call"
 else fail "W2" "rc=$(rc_of w2) calls=$(calls_of w2)"; fi
 
-run_case w2b watch-green -- "${COMMON[@]}" --mr 7 --pipeline 501
-if [ "$(rc_of w2b)" = 2 ] && [ "$(calls_of w2b)" = 0 ]; then pass "W2b --mr and --pipeline together exits 2"; else fail "W2b" "rc=$(rc_of w2b)"; fi
+# --mr with --pipeline is the resume form: that pipeline id, the MR's merge status and superseded guard
+run_case w2b watch-green -- "${COMMON[@]}" --mr 7 --pipeline 501 --wait 0
+if [ "$(rc_of w2b)" = 0 ] && out_of w2b | jq -e '.ok == true and .pipeline_id == 501 and .mr_iid == 7 and .ready == true and .detailed_merge_status == "mergeable" and .superseded == false
+      and .resume_hint == "watch.sh --project void-realm-solutions/silkops-harness-eval --mr 7 --pipeline 501"' >/dev/null; then
+  pass "W2b --mr and --pipeline together -> watches the given pipeline with the MR's context"
+else fail "W2b" "rc=$(rc_of w2b) out=$(out_of w2b)"; fi
+run_case w2c watch-green -- "${COMMON[@]}" --mr x
+if [ "$(rc_of w2c)" = 2 ] && [ "$(calls_of w2c)" = 0 ]; then pass "W2c non-numeric --mr exits 2"; else fail "W2c" "rc=$(rc_of w2c)"; fi
 
 run_case w3 watch-no-pipeline -- "${COMMON[@]}" --mr 7
 if [ "$(rc_of w3)" = 5 ] && out_of w3 | jq -e '.ok == false and .error == "no_head_pipeline"' >/dev/null; then
@@ -162,9 +168,9 @@ else fail "W7b" "rc=$(rc_of w7b) out=$(out_of w7b)"; fi
 # --- wait budget exhausted -----------------------------------------------------------
 run_case w8 watch-running -- "${COMMON[@]}" --mr 7 --wait 40 --interval 20
 if [ "$(rc_of w8)" = 0 ] && out_of w8 | jq -e '.ok == true and .status == "running" and .terminal == false and .ready == false and .still_running == true
-      and .polls == 3 and .waited_s == 40 and .resume_hint == "watch.sh --project void-realm-solutions/silkops-harness-eval --pipeline 501"' >/dev/null \
-  && [ "$(writes_of w8)" = 0 ]; then
-  pass "W8 running past the wait budget -> still_running:true, resume hint by pipeline id, exit 0"
+      and .polls == 3 and .waited_s == 40 and .errors == [] and .resume_hint == "watch.sh --project void-realm-solutions/silkops-harness-eval --mr 7 --pipeline 501"' >/dev/null \
+  && [ "$(writes_of w8)" = 0 ] && err_of w8 | grep -- 'resume with: watch.sh --project void-realm-solutions/silkops-harness-eval --mr 7 --pipeline 501' >/dev/null; then
+  pass "W8 running past the wait budget -> still_running:true, resume hint carries --mr and --pipeline, exit 0"
 else fail "W8" "rc=$(rc_of w8) out=$(out_of w8)"; fi
 
 # --- resume by pipeline id reaches the same terminal report --------------------------
@@ -206,6 +212,60 @@ if [ "$(rc_of w12)" = 0 ] && out_of w12 | jq -e '(.failed[0].root_cause | any(co
   && ! err_of w12 | grep 'glpat-fake' >/dev/null; then
   pass "W12 oauth2:<cred>@ in a root-cause line is redacted in the result, the note body, and stderr"
 else fail "W12" "rc=$(rc_of w12) out=$(out_of w12) body=$(body_of w12 1 2>/dev/null)"; fi
+
+# --- review #9: a trace cannot close the note's fence or start a line with a quick action ---
+run_case w13 watch-fence -- "${COMMON[@]}" --mr 7 --note --wait 0
+W13_BODY="$(body_of w13 1 2>/dev/null | jq -r '.body.body' 2>/dev/null)"
+if [ "$(rc_of w13)" = 0 ] && [ "$(notes_posted w13)" = 1 ] && [ -n "$W13_BODY" ] \
+  && out_of w13 | jq -e '(.failed[0].root_cause | index("```") != null) and (.failed[0].root_cause | index("/approve") != null)' >/dev/null \
+  && ! printf '%s\n' "$W13_BODY" | grep -E '^/' >/dev/null \
+  && [ "$(printf '%s\n' "$W13_BODY" | grep -cE '^````$')" = 2 ] \
+  && printf '%s\n' "$W13_BODY" | grep -xF '  ```' >/dev/null && printf '%s\n' "$W13_BODY" | grep -xF '  /approve' >/dev/null \
+  && printf '%s\n' "$W13_BODY" | awk '/^````$/{n++; next} n==1 && /^\/|^```$/{bad=1} END{exit bad}'; then
+  pass "W13 trace with a \`\`\` line and quick-action lines -> note fence is longer (````), every root-cause line indented, no line starts with /"
+else fail "W13" "rc=$(rc_of w13) notes=$(notes_posted w13) body=$(printf '%s' "$W13_BODY" | head -c 900)"; fi
+
+# --- review #10: jobs listing paginated; a failed listing is an error, never "zero jobs" ----------
+PAGED="$SCRATCH/watch-paged"; mkdir -p "$PAGED"
+cp "$STUB_DIR/watch-common/pipeline-success.json" "$PAGED/pipeline.json"
+jq -c '[range(1; 101) | {id: (8000 + .), name: ("job-" + (. | tostring)), stage: "build", status: "success", failure_reason: null, web_url: ("https://gitlab.com/x/-/jobs/" + (8000 + . | tostring))}]' -n >"$PAGED/jobs-p1.json"
+jq -c '[range(101; 104) | {id: (8000 + .), name: ("job-" + (. | tostring)), stage: "build", status: "success", failure_reason: null, web_url: ("https://gitlab.com/x/-/jobs/" + (8000 + . | tostring))}]' -n >"$PAGED/jobs-p2.json"
+printf 'GET\tprojects/*/pipelines/501\tpipeline.json\nGET\tprojects/*/pipelines/501/jobs*\tjobs-p2.json\t200\t*&page=2*\nGET\tprojects/*/pipelines/501/jobs*\tjobs-p1.json\n' >"$PAGED/routes.tsv"
+run_case w14 "$PAGED" -- "${COMMON[@]}" --pipeline 501 --wait 0
+if [ "$(rc_of w14)" = 0 ] && out_of w14 | jq -e '.ok == true and .status == "success" and (.jobs | length) == 103 and (.jobs | map(.name) | index("job-103") != null) and (.jobs | map(.name) | index("job-1") != null) and .errors == []' >/dev/null \
+  && [ "$(log_of w14 | grep -cE -- '/jobs\?include_retried=true&per_page=100&page=1')" = 1 ] && [ "$(log_of w14 | grep -cE -- '&page=2')" = 1 ] && [ "$(log_of w14 | grep -cE -- '&page=3')" = 0 ]; then
+  pass "W14 103 jobs across two pages -> every job in the report, exactly pages 1 and 2 fetched"
+else fail "W14" "rc=$(rc_of w14) n=$(out_of w14 | jq '.jobs | length') log=$(log_of w14 | tr '\n' ';')"; fi
+
+# poll 1 running (jobs ok), poll 2 failed with the jobs GET returning 500, budget spent
+run_case w15 watch-running:watch-jobs-500 -- "${COMMON[@]}" --mr 7 --retry --wait 20 --interval 20
+if [ "$(rc_of w15)" = 0 ] && out_of w15 | jq -e '.ok == true and .status == "failed" and .terminal == true and .polls == 2
+      and (.errors | length) == 1 and .errors[0].poll == 2 and .errors[0].what == "jobs" and (.errors[0].message | contains("500"))
+      and (.jobs | length) == 3 and (.jobs | map(.status) | index("running") != null) and .retried == []' >/dev/null \
+  && [ "$(retries_of w15)" = 0 ] && ! out_of w15 | grep 'glpat-stubsecret' >/dev/null && ! err_of w15 | grep 'glpat-stubsecret' >/dev/null; then
+  pass "W15 jobs GET 500 mid-watch -> errors entry for that poll, previous snapshot kept (not zero jobs), no retry POST, stub token redacted"
+else fail "W15" "rc=$(rc_of w15) out=$(out_of w15) log=$(log_of w15 | tr '\n' ';')"; fi
+
+run_case w15b watch-jobs-500 -- "${COMMON[@]}" --mr 7 --wait 0
+if [ "$(rc_of w15b)" = 1 ] && out_of w15b | jq -e '.ok == false and .error == "jobs_fetch_failed" and .pipeline_id == 501 and .errors[0].what == "jobs"' >/dev/null && [ "$(writes_of w15b)" = 0 ]; then
+  pass "W15b jobs GET 500 on the first poll -> exit 1 jobs_fetch_failed, zero writes"
+else fail "W15b" "rc=$(rc_of w15b) out=$(out_of w15b)"; fi
+
+# --- review #18: resuming by --pipeline keeps the superseded guard ------------------------------
+# the head moved to 502 while the watch was away; a resume by pipeline id with --retry must not POST
+run_case w16 watch-superseded -- "${COMMON[@]}" --pipeline 501 --retry --wait 0
+if [ "$(rc_of w16)" = 0 ] && out_of w16 | jq -e '.ok == true and .mr_iid == 7 and .superseded == true and .head_pipeline_id == 502 and .status == "failed"
+      and .failed[0].classification.transient == true and .failed[0].classification.retry_safe == true and .retried == []
+      and (.retry_skipped[0].reason | contains("superseded"))' >/dev/null && [ "$(retries_of w16)" = 0 ]; then
+  pass "W16 resume with --pipeline after the head moved, --retry -> MR resolved from the pipeline ref, superseded, no retry POST"
+else fail "W16" "rc=$(rc_of w16) out=$(out_of w16) log=$(log_of w16 | tr '\n' ';')"; fi
+
+run_case w16b watch-branch-nomr -- "${COMMON[@]}" --pipeline 501 --retry --wait 0
+if [ "$(rc_of w16b)" = 0 ] && out_of w16b | jq -e '.ok == true and .mr_iid == null and .status == "failed" and .retried == []
+      and (.retry_skipped[0].reason | startswith("no_mr_context"))' >/dev/null && [ "$(retries_of w16b)" = 0 ] \
+  && log_of w16b | grep -E -- 'merge_requests\?source_branch=feat%2Fu6' >/dev/null; then
+  pass "W16b bare --pipeline on a branch pipeline without an open MR, --retry -> retry refused (no_mr_context), report still produced"
+else fail "W16b" "rc=$(rc_of w16b) out=$(out_of w16b) log=$(log_of w16b | tr '\n' ';')"; fi
 
 # --- lint gate: no merge verb anywhere in the skills or the watcher ------------------
 HITS="$(grep -rnE 'mr merge|/merge([^_a-zA-Z]|$)|protected_branches' "$ROOT/skills" "$ROOT/ops/watch.sh" 2>/dev/null)"

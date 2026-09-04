@@ -25,11 +25,14 @@ closed issue.
 1. **Parse the plan.** `python3 ${CLAUDE_PLUGIN_ROOT}/ops/plan-units.py <plan-path>` → units
    with `id`, `title`, `goal`, `requirements`, `depends_on`, `files`, `verification`. Stop with
    the parser's message if it reports zero units or warnings about the Unit Index.
-2. **Find or create the milestone.** `glab api projects/<urlenc>/milestones?search=<title>`;
-   match on exact title, else create with `glab api -X POST projects/<urlenc>/milestones
-   -f title=… -f description=@<file>` where the description carries the marker
-   (`${CLAUDE_PLUGIN_ROOT}/ops/lib/prelude.sh` → `silkops_marker <plan-basename> milestone <run-id>`).
-   The run id is a short timestamp-based id you generate once per invocation.
+2. **Find or create the milestone.** `${CLAUDE_PLUGIN_ROOT}/ops/milestone-upsert.sh --project P
+   --title <title> --plan <basename> --run <run-id> [--description-file <f>]` — first with
+   `--dry-run` to show current vs proposed, then for real. It matches the exact title, creates
+   the milestone when absent (description = marker `unit=milestone` + managed region wrapping
+   the file), re-syncs only the managed region when it exists, and reports `action`
+   (created|updated|unchanged) with `id`, `iid`, `web_url`. A closed milestone of that title
+   exits 7: stop and ask, do not create a look-alike. Pass `iid`/`title` on to Step 3. The run
+   id is a short timestamp-based id you generate once per invocation.
 3. **Upsert one issue per unit** (dependency order is irrelevant here):
    `ops/issue-upsert.sh --project P --marker-unit U<N> --plan <basename> --run <run-id>
    --title "U<N> — <unit title>" --body-file <rendered body> --milestone <title> --labels u<N>,silkops`.
@@ -53,5 +56,6 @@ closed issue.
 - Closed issues are never edited (`issue-upsert.sh` exits 7; do not work around it).
 - Every object this skill writes carries the marker; that is what `scripts/audit-milestone.sh`
   checks.
-- No `glab api` calls outside the ones named here; if you need another operation, it belongs
-  in `ops/`, not in this skill.
+- No raw `glab api` calls in this skill; every read or write is one of the `ops/` scripts named
+  here (`plan-units.py`, `milestone-upsert.sh`, `issue-upsert.sh`, `issue-link.sh`, `note.sh`).
+  If you need another operation, it belongs in `ops/`, not in this skill.

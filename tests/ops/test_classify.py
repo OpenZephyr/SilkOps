@@ -22,7 +22,7 @@ def trace(name):
 def run(script, *args, stdin=None):
     """Run ops/<script> as a subprocess; return (rc, parsed-json-or-None, stderr)."""
     p = _subprocess.run(["python3", os.path.join(OPS, script)] + list(args),
-                        input=stdin, capture_output=True, text=True)
+                        input=stdin, capture_output=True, text=True, timeout=30)
     out = None
     if p.stdout.strip():
         lines = [l for l in p.stdout.splitlines() if l.strip()]
@@ -153,6 +153,40 @@ class NoDeclarationAndUnknown(unittest.TestCase):
         self.assertFalse(out["marker_hit_before_failure"])
         self.assertTrue(out["retry_safe"])
 
+    def test_early_nonfatal_hit_does_not_shrink_the_window(self):
+        # review #8: a non-fatal line matching the docker-hub-502 pattern BEFORE the push,
+        # then the fatal one after it — the window must end at the runner's failure line, so
+        # the marker between the two hits still vetoes the retry
+        p = self._write(
+            '$ echo "silkops: no-retry-after=build-image: pushing"\n'
+            "silkops: no-retry-after=build-image: pushing\n"
+            "$ scripts/publish.sh\n"
+            'warning: registry-1.docker.io returned "received unexpected HTTP status: 502 Bad Gateway" on attempt 1, retrying\n'
+            "build-image: pushing registry/x:1\n"
+            'docker: Error response from daemon: Get "https://registry-1.docker.io/v2/x/manifests/y": received unexpected HTTP status: 502 Bad Gateway.\n'
+            "ERROR: Job failed: exit code 125\n")
+        rc, out, err = run("classify-failure.py", p)
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(out["fact"], "docker-hub-502")
+        self.assertTrue(out["transient"])
+        self.assertTrue(out["marker_hit_before_failure"])
+        self.assertFalse(out["retry_safe"])
+        self.assertEqual(out["marker_line_no"], 5)
+        self.assertEqual(out["failure_line_no"], 7)
+
+    def test_no_runner_failure_line_uses_last_hit(self):
+        # truncated trace (no `ERROR: Job failed`): the window ends at the fact's LAST hit
+        p = self._write(
+            "silkops: no-retry-after=build-image: pushing\n"
+            'warning: 502 Bad Gateway from registry-1.docker.io, retrying\n'
+            "build-image: pushing registry/x:1\n"
+            'docker: Error response from daemon: Get "https://registry-1.docker.io/v2/x/manifests/y": received unexpected HTTP status: 502 Bad Gateway.\n')
+        rc, out, _ = run("classify-failure.py", p)
+        self.assertEqual(rc, 0)
+        self.assertTrue(out["marker_hit_before_failure"])
+        self.assertFalse(out["retry_safe"])
+        self.assertEqual(out["failure_line_no"], 4)
+
     def test_unknown_failure(self):
         p = self._write("$ make\nsomething odd happened\nERROR: Job failed: exit code 1\n")
         rc, out, _ = run("classify-failure.py", p)
@@ -173,6 +207,59 @@ class NoDeclarationAndUnknown(unittest.TestCase):
             rc, out, _ = run("classify-failure.py", "-", stdin=f.read())
         self.assertEqual(rc, 0)
         self.assertEqual(out["fact"], "dind-service-dns")
+
+
+class UntrustedDeclaration(unittest.TestCase):
+    """review #21: the declared pattern is job output; a backtracking bomb must not hang."""
+
+    def _write(self, text):
+        f = tempfile.NamedTemporaryFile("w", suffix=".log", delete=False)
+        f.write(text)
+        f.close()
+        self.addCleanup(os.unlink, f.name)
+        return f.name
+
+    FATAL = ('docker: Error response from daemon: Get "https://registry-1.docker.io/v2/x/manifests/y": '
+             "received unexpected HTTP status: 502 Bad Gateway.\n"
+             "ERROR: Job failed: exit code 125\n")
+
+    def test_pathological_declaration_completes(self):
+        import time
+        p = self._write("silkops: no-retry-after=(a+)+$\n" + "a" * 5000 + "!\n" + self.FATAL)
+        t0 = time.monotonic()
+        rc, out, err = run("classify-failure.py", p)
+        self.assertLess(time.monotonic() - t0, 10)
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(out["no_retry_after"], "(a+)+$")
+        # matched literally: no line contains the text `(a+)+$`, so retry follows the fact
+        self.assertFalse(out["marker_hit_before_failure"])
+        self.assertTrue(out["retry_safe"])
+
+    def test_pathological_declaration_literal_match_still_vetoes(self):
+        p = self._write("silkops: no-retry-after=(a+)+$\n" + "a" * 5000 + "!\n"
+                        "step (a+)+$ reached\n" + self.FATAL)
+        rc, out, err = run("classify-failure.py", p)
+        self.assertEqual(rc, 0, err)
+        self.assertTrue(out["marker_hit_before_failure"])
+        self.assertEqual(out["marker_line_no"], 3)
+        self.assertFalse(out["retry_safe"])
+
+    def test_overlong_line_and_declaration_are_capped(self):
+        long_decl = "x" * 300
+        p = self._write("silkops: no-retry-after=" + long_decl + "\n" + "y" * 10000 + " " + "x" * 300 + "\n" + self.FATAL)
+        rc, out, err = run("classify-failure.py", p)
+        self.assertEqual(rc, 0, err)
+        # the marker sits past the 4096-char cut, so it is not seen; the run completes
+        self.assertFalse(out["marker_hit_before_failure"])
+        self.assertEqual(out["no_retry_after"], long_decl)
+
+    def test_plain_regex_declaration_still_a_regex(self):
+        p = self._write("silkops: no-retry-after=build-image: push(ing|ed) .*:[0-9]\n"
+                        "build-image: pushed registry/x:1\n" + self.FATAL)
+        rc, out, err = run("classify-failure.py", p)
+        self.assertEqual(rc, 0, err)
+        self.assertTrue(out["marker_hit_before_failure"])
+        self.assertFalse(out["retry_safe"])
 
 
 if __name__ == "__main__":

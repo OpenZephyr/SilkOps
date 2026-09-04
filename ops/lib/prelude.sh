@@ -43,11 +43,13 @@ redact() {
   local j='[Jj][Oo][Bb]-[Tt][Oo][Kk][Ee][Nn]'
   local b='[Bb][Ee][Aa][Rr][Ee][Rr]'
   # Header values: mask the value and, when present, the scheme word before it
-  # (Bearer/Basic/…) — two tokens, so `Authorization: Basic <cred>` loses the cred.
+  # (Bearer/Basic/…) — two tokens, so `Authorization: Basic <cred>` loses the cred. The header
+  # name may be quoted and the value may open with a quote (JSON / JS-style dumps:
+  # `"Authorization": "Basic …"`, `Authorization: 'Bearer …'`); the closing quote stays.
   # Excludes backslash so a JSON-encoded quote (\") after a value survives redaction intact.
   local tok="[^[:space:]\"',;\\\\]+"
   sed -E \
-    -e "s/(${a}|${p}|${j}):[[:space:]]*${tok}([[:space:]]+${tok})?/\1: <REDACTED>/g" \
+    -e "s/((${a}|${p}|${j})[\"']?:[[:space:]]*[\"']?)${tok}([[:space:]]+${tok})?/\1<REDACTED>/g" \
     -e "s/${b}[[:space:]]+eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/Bearer <REDACTED>/g" \
     -e 's/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/<REDACTED>/g' \
     -e 's/gl(pat|cbt|dt|rt)-[A-Za-z0-9_-]+/<REDACTED>/g' \

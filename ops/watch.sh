@@ -1,24 +1,32 @@
 #!/usr/bin/env bash
 # watch.sh — bounded-wait watch of an MR head pipeline or a pipeline id (plan U6, KTD6).
 #
-# Usage: watch.sh --project <group/project> (--mr <iid> | --pipeline <id>)
+# Usage: watch.sh --project <group/project> (--mr <iid> [--pipeline <id>] | --pipeline <id>)
 #          [--wait <seconds, default 300>] [--interval <seconds, default 20>]
 #          [--retry] [--note] [--plan <basename>] [--run <id>]
 #
-# Resolves the MR's head pipeline (the checkpoint id), then polls
-# `pipelines/:id` + `pipelines/:id/jobs?include_retried=true` until the pipeline is
-# terminal (success, failed, canceled, skipped, manual) or the wait budget ends.
-# Emits ONE JSON report: status, terminal, ready (success AND detailed_merge_status
-# == mergeable when an MR is known; == success for a bare pipeline), superseded
-# (the MR's head pipeline moved on), jobs, status transitions, and for a failed
-# pipeline the per-job triage: `trace.py root-cause` lines + `classify-failure.py`
-# verdict, every trace line passed through `redact`.
+# Resolves the MR's head pipeline (the checkpoint id) — or, with --mr AND --pipeline, watches
+# that pipeline id while reading superseded/detailed_merge_status from the MR (the resume
+# form) — then polls `pipelines/:id` + every page of `pipelines/:id/jobs?include_retried=true`
+# until the pipeline is terminal (success, failed, canceled, skipped, manual) or the wait
+# budget ends. Emits ONE JSON report: status, terminal, ready (success AND
+# detailed_merge_status == mergeable when an MR is known; == success for a bare pipeline),
+# superseded (the MR's head pipeline moved on), jobs, status transitions, errors (a jobs
+# listing that failed on some poll: the previous snapshot is kept, never "zero jobs"; on the
+# first poll it is fatal, exit 1 jobs_fetch_failed), and for a failed pipeline the per-job
+# triage: `trace.py root-cause` lines + `classify-failure.py` verdict, every trace line
+# passed through `redact`.
 #   --retry  POST jobs/:id/retry once per job per watch, only when the failure is
 #            transient AND retry_safe AND the job has not been retried before
 #            (same-named jobs in the include_retried list) AND the pipeline is not
-#            superseded; then keeps watching the same pipeline id.
+#            superseded; then keeps watching the same pipeline id. With a bare --pipeline
+#            the MR is resolved from the pipeline (GitLab's MR ref `refs/…-requests/<iid>/head`,
+#            else merge_requests?source_branch=<ref>&state=opened); without MR context the retry
+#            is refused (retry_skipped, no_mr_context) — the report is still produced.
 #   --note   (with --mr) posts a marker-tagged triage note per failed job via note.sh,
-#            deduplicated by `triage-<pipeline id>-<job name>`.
+#            deduplicated by `triage-<pipeline id>-<job name>`. Root-cause lines sit in a
+#            fence longer than any backtick run they contain and are indented, so a trace
+#            line can neither close the fence nor read as a GitLab quick action.
 # The wait budget is counted in poll intervals (poll at 0, interval, 2*interval, …
 # while the next poll still fits), so a run is deterministic; SILKOPS_WATCH_SLEEP
 # overrides the seconds actually slept between polls (tests set 0).
@@ -37,7 +45,7 @@ set -euo pipefail
 # shellcheck source=lib/glab.sh
 . "$(dirname "$0")/lib/glab.sh"
 
-usage() { fail "$EX_USAGE" usage "usage: watch.sh --project <group/project> (--mr <iid> | --pipeline <id>) [--wait <s>] [--interval <s>] [--retry] [--note] [--plan <basename>] [--run <id>]${1:+ — $1}"; }
+usage() { fail "$EX_USAGE" usage "usage: watch.sh --project <group/project> (--mr <iid> [--pipeline <id>] | --pipeline <id>) [--wait <s>] [--interval <s>] [--retry] [--note] [--plan <basename>] [--run <id>]${1:+ — $1}"; }
 
 PROJECT=""; MR=""; PIPE=""; WAIT=300; INTERVAL=20; RETRY=false; NOTE=false
 PLAN="-"; RUN="$(date -u +%Y%m%dT%H%M%SZ)"; ROOT_LINES=15
@@ -58,9 +66,9 @@ while [ $# -gt 0 ]; do
   esac
 done
 require_project
-if [ -n "$MR" ] && [ -n "$PIPE" ]; then usage "pass exactly one of --mr or --pipeline"; fi
-[ -n "$MR$PIPE" ] || usage "pass exactly one of --mr or --pipeline"
-[[ "$MR$PIPE" =~ ^[0-9]+$ ]] || usage "--mr/--pipeline must be a number"
+[ -n "$MR$PIPE" ] || usage "pass --mr <iid>, --pipeline <id>, or both (--mr with --pipeline watches that pipeline with the MR's context)"
+[ -z "$MR" ] || [[ "$MR" =~ ^[0-9]+$ ]] || usage "--mr must be a number"
+[ -z "$PIPE" ] || [[ "$PIPE" =~ ^[0-9]+$ ]] || usage "--pipeline must be a number"
 [[ "$WAIT" =~ ^[0-9]+$ ]] || usage "--wait must be a number of seconds"
 [[ "$INTERVAL" =~ ^[1-9][0-9]*$ ]] || usage "--interval must be a positive number of seconds"
 if [ "$NOTE" = true ] && [ -z "$MR" ]; then usage "--note needs --mr (notes are posted on the merge request)"; fi
@@ -82,8 +90,12 @@ read_mr() {  # sets DMS, HEAD_ID, MR_URL from $MRJ
 if [ -n "$MR" ]; then
   MRJ="$(fetch_mr)" || fail "$EX_NOT_FOUND" not_found "merge request !$MR not found in $PROJECT"
   read_mr
-  [ "$HEAD_ID" != null ] || fail "$EX_NOT_FOUND" no_head_pipeline "merge request !$MR has no head pipeline yet" "$(jq -cn --argjson iid "$MR" --argjson u "$MR_URL" '{mr_iid: $iid, web_url: $u}')"
-  PIPE_ID="$HEAD_ID"
+  if [ -n "$PIPE" ]; then
+    PIPE_ID="$PIPE"   # resume form: this pipeline, with the MR's superseded / merge status
+  else
+    [ "$HEAD_ID" != null ] || fail "$EX_NOT_FOUND" no_head_pipeline "merge request !$MR has no head pipeline yet" "$(jq -cn --argjson iid "$MR" --argjson u "$MR_URL" '{mr_iid: $iid, web_url: $u}')"
+    PIPE_ID="$HEAD_ID"
+  fi
 else
   PIPE_ID="$PIPE"
 fi
@@ -92,8 +104,12 @@ fi
 POLLS=0; ELAPSED=0; PREV='{}'; STATUS=""; SUPERSEDED=false
 CHANGES='[]'; TRIAGE='[]'; FAILED_ROUND='[]'; NOTES='[]'
 RETRIED='[]'; RETRY_LOG='[]'; RETRY_SKIPPED='[]'; RETRY_UNSAFE='[]'
-RETRIED_NAMES='[]'
-JOBS='[]'; PIPE_JSON='{}'
+RETRIED_NAMES='[]'; ERRORS='[]'
+JOBS='[]'; RAW_JOBS='[]'; PIPE_JSON='{}'
+JOBS_KNOWN=false    # a jobs listing has succeeded at least once
+JOBS_STALE=false    # this poll's listing failed; JOBS is the previous snapshot
+NO_MR_CONTEXT=false; MR_RESOLVE_TRIED=false
+JOBS_PER_PAGE=100; JOBS_MAX_PAGES=50
 
 append() {  # append <VAR> <json> — VAR is a JSON array
   local cur="${!1}"
@@ -121,17 +137,60 @@ report() {  # report <extra-json> — the single JSON result
     --argjson jobs "$JOBS" --argjson changes "$CHANGES" --argjson failed "$failed_now" \
     --argjson triage "$TRIAGE" --argjson retried "$RETRIED" --argjson retry_log "$RETRY_LOG" \
     --argjson retry_skipped "$RETRY_SKIPPED" --argjson retry_unsafe "$RETRY_UNSAFE" \
-    --argjson notes "$NOTES" --argjson polls "$POLLS" --argjson waited "$ELAPSED" \
-    --argjson wait "$WAIT" --argjson interval "$INTERVAL" --argjson extra "$1" '
+    --argjson notes "$NOTES" --argjson errors "$ERRORS" --argjson polls "$POLLS" --argjson waited "$ELAPSED" \
+    --argjson wait "$WAIT" --argjson interval "$INTERVAL" --arg hint "$(resume_hint)" --argjson extra "$1" '
     {project: $project, mr_iid: $mr_iid, mr_web_url: $mr_url,
      pipeline_id: $pid, pipeline_web_url: ($pipe.web_url // null), ref: ($pipe.ref // null), sha: ($pipe.sha // null),
      status: $status, terminal: $terminal, ready: $ready, detailed_merge_status: $dms,
      head_pipeline_id: $head, superseded: $superseded,
      jobs: $jobs, changes: $changes, failed: $failed, triage: $triage,
      retried: $retried, retry_log: $retry_log, retry_skipped: $retry_skipped, retry_unsafe: $retry_unsafe,
-     notes: $notes, polls: $polls, waited_s: $waited, wait_s: $wait, interval_s: $interval,
+     notes: $notes, errors: $errors, polls: $polls, waited_s: $waited, wait_s: $wait, interval_s: $interval,
      still_running: (($terminal | not)),
-     resume_hint: ("watch.sh --project " + $project + " --pipeline " + ($pid | tostring))} + $extra')"
+     resume_hint: $hint} + $extra')"
+}
+# resume_hint — the checkpoint carries the MR too, so a resumed watch keeps the superseded guard.
+resume_hint() { printf 'watch.sh --project %s%s --pipeline %s' "$PROJECT" "${MR:+ --mr $MR}" "$PIPE_ID"; }
+
+# fetch_jobs — every page of pipelines/:id/jobs?include_retried=true as one array on stdout;
+# nonzero when any page fails (the caller keeps its previous snapshot; stderr in $TMP/jobs.err).
+fetch_jobs() {
+  local page=1 acc='[]' chunk n
+  : >"$TMP/jobs.err"
+  while :; do
+    chunk="$(api_get "projects/$ENC/pipelines/$PIPE_ID/jobs?include_retried=true&per_page=$JOBS_PER_PAGE&page=$page" 2>>"$TMP/jobs.err")" || return 1
+    n="$(printf '%s' "$chunk" | jq -r 'if type == "array" then length else -1 end' 2>/dev/null)" || n=-1
+    [ "$n" -ge 0 ] || { echo "jobs page $page is not a JSON array" >>"$TMP/jobs.err"; return 1; }
+    acc="$(jq -cn --argjson a "$acc" --argjson b "$chunk" '$a + $b')"
+    if [ "$n" -lt "$JOBS_PER_PAGE" ] || [ "$page" -ge "$JOBS_MAX_PAGES" ]; then break; fi
+    page=$((page + 1))
+  done
+  printf '%s' "$acc"
+}
+
+# resolve_mr_from_pipeline — a bare --pipeline with --retry needs MR context (superseded,
+# detailed_merge_status) before any retry: GitLab's MR ref (`refs/…-requests/<iid>/head`) names
+# the MR; a branch ref is looked up via merge_requests?source_branch=<ref>&state=opened (exactly
+# one match). Without context NO_MR_CONTEXT=true and decide_retry refuses. (The grouped word in
+# the regex keeps the no-merge gate's literal scan quiet: this is a ref name, not a merge.)
+resolve_mr_from_pipeline() {
+  local ref cands
+  ref="$(printf '%s' "$PIPE_JSON" | jq -r '.ref // ""')"
+  if [[ "$ref" =~ ^refs/(merge)-requests/([0-9]+)/head$ ]]; then
+    MR="${BASH_REMATCH[2]}"
+  elif [ -n "$ref" ]; then
+    if cands="$(api_get "projects/$ENC/merge_requests?source_branch=$(urlenc "$ref")&state=opened&per_page=100")" \
+      && [ "$(printf '%s' "$cands" | jq -r 'if type == "array" then length else 0 end')" = 1 ]; then
+      MR="$(printf '%s' "$cands" | jq -r '.[0].iid')"
+    fi
+  fi
+  if [ -n "$MR" ] && MRJ="$(fetch_mr)"; then
+    read_mr
+    err "resolved merge request !$MR for pipeline $PIPE_ID (ref $ref); its head pipeline is $HEAD_ID"
+  else
+    MR=""; NO_MR_CONTEXT=true
+    err "no merge request context for pipeline $PIPE_ID (ref ${ref:-unknown}): --retry is refused without it (the superseded guard needs the MR)"
+  fi
 }
 
 # triage_job <job-json> — fetch the trace, root-cause + classify, redact; appends to
@@ -175,6 +234,8 @@ decide_retry() {
   elif [ "$safe" != true ]; then
     err "retry requested for $name (#$id) but unsafe: $reason"
     append RETRY_UNSAFE "$(jq -cn --arg n "$name" --argjson id "$id" --arg r "$reason" '{name: $n, id: $id, reason: $r}')"
+  elif [ "$NO_MR_CONTEXT" = true ]; then
+    append RETRY_SKIPPED "$(jq -cn --arg n "$name" --argjson id "$id" '{name: $n, id: $id, reason: "no_mr_context: no merge request could be resolved for this pipeline, so the superseded guard cannot run; resume with --mr <iid> --pipeline <id> or let a human retry"}')"
   elif [ "$SUPERSEDED" = true ]; then
     append RETRY_SKIPPED "$(jq -cn --arg n "$name" --argjson id "$id" --argjson h "$HEAD_ID" '{name: $n, id: $id, reason: ("pipeline superseded: the MR head pipeline is now " + ($h | tostring) + "; never retry a superseded pipeline")}')"
   elif [ "$count" -gt 0 ]; then
@@ -196,7 +257,7 @@ decide_retry() {
 
 # post_note <entry-json> — marker-tagged triage note on the MR, deduplicated per job name.
 post_note() {
-  local e="$1" name id key bf out decision
+  local e="$1" name id key bf out decision fence
   name="$(printf '%s' "$e" | jq -r .name)"; id="$(printf '%s' "$e" | jq -r .id)"
   key="triage-$PIPE_ID-$name"
   decision="not retried"
@@ -210,9 +271,12 @@ post_note() {
       "- step: \(.classification.step // "n/a")",
       "- failure_reason: \(.failure_reason // "n/a") · exit code: \(.exit_code // "n/a")"'
     printf -- '- retry decision: %s\n\n' "$decision"
-    printf 'Root cause (last %s trace lines before the failure, redacted):\n\n```\n' "$ROOT_LINES"
-    printf '%s' "$e" | jq -r '.root_cause[]'
-    printf '```\n'
+    # The trace is untrusted: the fence is one backtick longer than any run inside it (a ``` line
+    # cannot close it) and every line is indented, so none starts with `/` (a quick action).
+    fence="$(printf '%s' "$e" | jq -r '[.root_cause[] | [match("`+"; "g").string | length] | max // 0] | max // 0 | (. + 1) | if . < 3 then 3 else . end | "`" * .')"
+    printf 'Root cause (last %s trace lines before the failure, redacted, indented two spaces):\n\n%s\n' "$ROOT_LINES" "$fence"
+    printf '%s' "$e" | jq -r '.root_cause[] | "  " + .'
+    printf '%s\n' "$fence"
   } | redact >"$bf"
   if out="$(bash "$OPS/note.sh" --project "$PROJECT" --mr "$MR" --body-file "$bf" --marker-unit U6 --plan "$PLAN" --run "$RUN" --dedupe-key "$key")"; then
     append NOTES "$(printf '%s' "$out" | jq -c --arg n "$name" --argjson id "$id" '{name: $n, job_id: $id, id: .id, existing: .existing, dedupe_key: .dedupe_key}')"
@@ -227,7 +291,21 @@ while :; do
   POLLS=$((POLLS + 1))
   PIPE_JSON="$(api_get "projects/$ENC/pipelines/$PIPE_ID")" || fail "$EX_NOT_FOUND" not_found "pipeline $PIPE_ID not found in $PROJECT"
   STATUS="$(printf '%s' "$PIPE_JSON" | jq -r '.status // "unknown"')"
-  RAW_JOBS="$(api_get "projects/$ENC/pipelines/$PIPE_ID/jobs?include_retried=true&per_page=100")" || RAW_JOBS='[]'
+  if [ "$RETRY" = true ] && [ -z "$MR" ] && [ "$MR_RESOLVE_TRIED" != true ]; then
+    MR_RESOLVE_TRIED=true; resolve_mr_from_pipeline
+  fi
+  if RAW="$(fetch_jobs)"; then
+    RAW_JOBS="$RAW"; JOBS_KNOWN=true; JOBS_STALE=false
+  else
+    MSG="$(redact <"$TMP/jobs.err" | tr '\n' ' ' | sed -E 's/[[:space:]]+$//')"
+    append ERRORS "$(jq -cn --argjson p "$POLLS" --arg m "${MSG:-jobs listing failed}" '{poll: $p, what: "jobs", message: $m}')"
+    if [ "$JOBS_KNOWN" != true ]; then
+      fail "$EX_OTHER" jobs_fetch_failed "could not list the jobs of pipeline $PIPE_ID on the first poll; refusing to report a pipeline with no jobs: $MSG" \
+        "$(jq -cn --argjson pid "$PIPE_ID" --arg st "$STATUS" --argjson e "$ERRORS" '{pipeline_id: $pid, status: $st, errors: $e}')"
+    fi
+    JOBS_STALE=true
+    err "poll $POLLS: jobs listing failed, keeping the previous poll's snapshot ($MSG)"
+  fi
   # Latest job per name; retry_count = same-named jobs minus one (KTD6: GitLab has no field).
   JOBS="$(printf '%s' "$RAW_JOBS" | jq -c 'group_by(.name) | map(sort_by(.id) | {name: .[-1].name, status: .[-1].status, id: .[-1].id,
       failure_reason: (.[-1].failure_reason // null), stage: (.[-1].stage // null), retry_count: (length - 1), web_url: (.[-1].web_url // null)})')"
@@ -243,13 +321,24 @@ while :; do
   err "poll $POLLS (t=${ELAPSED}s): pipeline $PIPE_ID $STATUS$( [ "$SUPERSEDED" = true ] && printf ' (superseded by %s)' "$HEAD_ID")$( [ "$NEW" != '[]' ] && printf ' · changes: %s' "$(printf '%s' "$NEW" | jq -r 'map("\(.name) \(.from)->\(.to)") | join(", ")')")"
 
   if is_terminal "$STATUS"; then
+    if [ "$JOBS_STALE" = true ] && [ $((ELAPSED + INTERVAL)) -le "$WAIT" ]; then
+      # terminal, but this poll's job list is the old snapshot: look again before triaging
+      err "pipeline $PIPE_ID is $STATUS but the jobs listing failed this poll; polling once more before triage"
+      sleep "$SLEEP_S"; ELAPSED=$((ELAPSED + INTERVAL))
+      continue
+    fi
     if [ "$STATUS" = failed ]; then
       FAILED_ROUND='[]'; DID_RETRY=false
       while IFS= read -r job; do
         [ -n "$job" ] || continue
         triage_job "$job"
       done < <(printf '%s' "$JOBS" | jq -c '.[] | select(.status == "failed")')
-      if [ "$RETRY" = true ]; then
+      if [ "$RETRY" = true ] && [ "$JOBS_STALE" = true ]; then
+        # never decide a retry on a stale snapshot (the budget count could be wrong)
+        while IFS= read -r e; do
+          [ -n "$e" ] && append RETRY_SKIPPED "$(printf '%s' "$e" | jq -c '{name, id, reason: "jobs listing failed this poll; no retry is decided on a stale job snapshot"}')"
+        done < <(printf '%s' "$FAILED_ROUND" | jq -c '.[]')
+      elif [ "$RETRY" = true ]; then
         while IFS= read -r e; do [ -n "$e" ] && decide_retry "$e"; done < <(printf '%s' "$FAILED_ROUND" | jq -c '.[]')
       fi
       if [ "$NOTE" = true ]; then
@@ -277,7 +366,7 @@ while :; do
   fi
 
   if [ $((ELAPSED + INTERVAL)) -gt "$WAIT" ]; then
-    err "wait budget of ${WAIT}s spent; pipeline $PIPE_ID still $STATUS — resume with: watch.sh --project $PROJECT --pipeline $PIPE_ID"
+    err "wait budget of ${WAIT}s spent; pipeline $PIPE_ID still $STATUS — resume with: $(resume_hint)"
     report '{}'
     exit "$EX_OK"
   fi

@@ -10,3 +10,7 @@ private-token-lower	curl -H "private-token: hunter3hunter3"	hunter3hunter3
 job-token	> JOB-TOKEN: jobtokenvalue987	jobtokenvalue987
 jwt	got eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcDEF123_-xyz back	eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcDEF123_-xyz
 bearer-jwt	Bearer eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJnbCJ9.SIGsig_-123 in header	eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJnbCJ9.SIGsig_-123
+authorization-json	"Authorization": "Basic c2lsa29wczpnbHBhdC1hYmM="	c2lsa29wczpnbHBhdC1hYmM=
+authorization-js-quoted	headers: { Authorization: 'Bearer topsecret9876' }	topsecret9876
+private-token-json	"PRIVATE-TOKEN": "hunter2hunter2"	hunter2hunter2
+job-token-json	{"JOB-TOKEN": "jobtok777"}	jobtok777

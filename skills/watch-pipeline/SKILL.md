@@ -36,9 +36,13 @@ live in `${CLAUDE_PLUGIN_ROOT}/facts/environment.json`; the runbook
    5 not found / no head pipeline yet (the MR was just pushed — wait a moment and re-run).
 3. **Act on the verdict.**
    - **`still_running: true`** — report the `changes` since the last poll (job → status) and
-     loop: run Step 1 again. Across sessions, resume with the `resume_hint`
-     (`watch.sh --project P --pipeline <id>`): the pipeline id is the checkpoint, no local
-     state is needed.
+     loop: run Step 1 again. Across sessions, resume with the `resume_hint` verbatim
+     (`watch.sh --project P --mr <iid> --pipeline <id>`): the pipeline id is the checkpoint,
+     the `--mr` keeps the superseded guard and merge status on the resumed watch, no local
+     state is needed. Never drop `--mr` from the hint; a bare `--pipeline` with `--retry`
+     resolves the MR from the pipeline and refuses the retry (`no_mr_context`) when it cannot.
+   - **`errors[]` non-empty** — a jobs listing failed on the named poll; the report carries the
+     previous poll's job snapshot, not an empty one. Say so; do not read `failed: []` as green.
    - **`ready: true`** — say exactly: "ready, not merging — a human merges", with the MR URL,
      the pipeline id and `detailed_merge_status: mergeable`. Stop. Do not call anything else.
    - **terminal, `status: success`, `ready: false`** — report `detailed_merge_status` verbatim and
@@ -82,4 +86,5 @@ live in `${CLAUDE_PLUGIN_ROOT}/facts/environment.json`; the runbook
   yourself for context, pipe it through `redact` before quoting it.
 - Session identity (or `SILKOPS_CI_TOKEN` when `CI` is set) for every call; the settings
   token is never used here.
-- `--project` explicit on every call; the pipeline id is the only checkpoint.
+- `--project` explicit on every call; the pipeline id (with the MR iid when known) is the only
+  checkpoint.
