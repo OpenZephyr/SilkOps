@@ -44,7 +44,8 @@ redact() {
   local b='[Bb][Ee][Aa][Rr][Ee][Rr]'
   # Header values: mask the value and, when present, the scheme word before it
   # (Bearer/Basic/…) — two tokens, so `Authorization: Basic <cred>` loses the cred.
-  local tok="[^[:space:]\"',;]+"
+  # Excludes backslash so a JSON-encoded quote (\") after a value survives redaction intact.
+  local tok="[^[:space:]\"',;\\\\]+"
   sed -E \
     -e "s/(${a}|${p}|${j}):[[:space:]]*${tok}([[:space:]]+${tok})?/\1: <REDACTED>/g" \
     -e "s/${b}[[:space:]]+eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/Bearer <REDACTED>/g" \
