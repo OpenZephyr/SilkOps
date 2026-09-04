@@ -1,0 +1,201 @@
+{
+  "issue": {
+    "id": 200368822,
+    "iid": 1,
+    "project_id": 55437356,
+    "title": "U1. Catalog contract and scaffolding",
+    "description": "- **Goal:** Establish the `images/` layout and the `image.yml` schema every later unit reads.\n- **Requirements:** R1, R5\n- **Dependencies:** none\n- **Files:**\n  - `images/README.md` (create — catalog index explaining what the factory is)\n  - `docs/image-catalog.md` (create — the `image.yml` schema and how to add an image)\n- **Approach:**\n  1. Define `image.yml` with a fixed shape: image name, registry path suffix, the base image as a `name@sha256:` digest, a map of tool versions, and an optional list of pinned apt/pip packages.\n  2. Every version the Dockerfile installs must come from `image.yml` via build args. A Dockerfile that hardcodes a version is a schema violation.\n  3. Document the tag form `<toolversion>-<YYYYMMDD>` and point at R7 for its immutability rule rather than restating it.\n- **Patterns to follow:** the self-contained-directory idiom already used by `tasks/*`.\n- **Test scenarios:**\n  - A reader following `docs/image-catalog.md` alone can state what files a new catalog entry needs and what `image.yml` must contain.\n  - Test expectation: no automated tests — this unit is schema and documentation only.\n- **Verification:** `docs/image-catalog.md` describes every field U2's build script reads.\n\n---\nPlan: `docs/plans/2026-08-30-1440-feat-ci-image-factory-plan.md` — see the `### U1. Catalog contract and scaffolding` unit, plus the Verification Contract and Definition of Done.\nMilestone: CI Image Factory",
+    "state": "closed",
+    "created_at": "2026-08-30T19:11:03.191Z",
+    "updated_at": "2026-09-01T23:11:52.147Z",
+    "closed_at": "2026-09-01T23:11:52.096Z",
+    "closed_by": {
+      "id": 9820378,
+      "username": "DomPolizzi",
+      "public_email": "",
+      "name": "Dominic",
+      "state": "active",
+      "locked": false,
+      "avatar_url": "https://gitlab.com/uploads/-/system/user/avatar/9820378/avatar.png?v=1788482984",
+      "web_url": "https://gitlab.com/DomPolizzi"
+    },
+    "labels": [
+      "image-factory",
+      "u1"
+    ],
+    "milestone": {
+      "id": 7578343,
+      "iid": 1,
+      "project_id": 55437356,
+      "title": "CI Image Factory",
+      "description": "Turn ci-cd into a container image factory: a flat images/* catalog with declarative pins, matrix-free parallel builds, immutable <toolver>-<YYYYMMDD> tags in the group registry, per-build vulnerability scanning, and append-only per-tag audit records.\n\nPlan: docs/plans/2026-08-30-1440-feat-ci-image-factory-plan.md\nObjective: pipelines get their toolchain pre-materialized instead of assembling it per job. Success metric is wall-clock feedback latency, measured against the aura-brawlers release-build-linux baseline of 3243s.",
+      "state": "active",
+      "created_at": "2026-08-30T19:10:51.976Z",
+      "updated_at": "2026-08-30T19:10:51.976Z",
+      "due_date": null,
+      "start_date": null,
+      "expired": false,
+      "web_url": "https://gitlab.com/void-realm-solutions/ci-cd/-/milestones/1"
+    },
+    "assignees": [],
+    "author": {
+      "id": 41644654,
+      "username": "group_80855973_bot_76fbf6745b704a951bfab24ca28fe879",
+      "public_email": null,
+      "name": "Ayror",
+      "state": "active",
+      "locked": false,
+      "avatar_url": "https://secure.gravatar.com/avatar/db1ed276784d338bb08e471049a0552d8e97c4508f55e42d866cac00b7f4d665?s=80&d=identicon",
+      "web_url": "https://gitlab.com/group_80855973_bot_76fbf6745b704a951bfab24ca28fe879"
+    },
+    "type": "ISSUE",
+    "assignee": null,
+    "user_notes_count": 0,
+    "merge_requests_count": 1,
+    "upvotes": 0,
+    "downvotes": 0,
+    "start_date": null,
+    "due_date": null,
+    "confidential": false,
+    "discussion_locked": null,
+    "issue_type": "issue",
+    "web_url": "https://gitlab.com/void-realm-solutions/ci-cd/-/work_items/1",
+    "time_stats": {
+      "time_estimate": 0,
+      "total_time_spent": 0,
+      "human_time_estimate": null,
+      "human_total_time_spent": null
+    },
+    "task_completion_status": {
+      "count": 0,
+      "completed_count": 0
+    },
+    "weight": null,
+    "blocking_issues_count": 0,
+    "has_tasks": true,
+    "task_status": "0 of 0 checklist items completed",
+    "_links": {
+      "self": "https://gitlab.com/api/v4/projects/55437356/issues/1",
+      "notes": "https://gitlab.com/api/v4/projects/55437356/issues/1/notes",
+      "award_emoji": "https://gitlab.com/api/v4/projects/55437356/issues/1/award_emoji",
+      "project": "https://gitlab.com/api/v4/projects/55437356",
+      "closed_as_duplicate_of": null
+    },
+    "references": {
+      "short": "#1",
+      "relative": "#1",
+      "full": "void-realm-solutions/ci-cd#1"
+    },
+    "severity": "UNKNOWN",
+    "subscribed": true,
+    "moved_to_id": null,
+    "imported": false,
+    "imported_from": "none",
+    "service_desk_reply_to": null,
+    "epic_iid": null,
+    "epic": null,
+    "iteration": null
+  },
+  "links": [
+    {
+      "id": 200368824,
+      "iid": 2,
+      "project_id": 55437356,
+      "title": "U2. Build-and-publish core",
+      "description": "- **Goal:** One script that resolves pins, builds, refuses to overwrite a tag, detects unchanged content, and pushes.\n- **Requirements:** R7, R8\n- **Dependencies:** U1\n- **Files:**\n  - `scripts/ci/build-image.sh` (create)\n  - `scripts/ci/image-identity.sh` (create — resolves base digest and computes the identity hash)\n- **Approach:**\n  1. Parse `images/$IMAGE_NAME/image.yml`; resolve the base image to a digest and export each pin as a build arg. Registry path, project ID, and catalog root come from the config surface, per KTD9 — no hardcoded instance values.\n  2. Compute the candidate tag, then query the registry for it. Fail the job when it exists, per KTD2.\n  3. Build with BuildKit and `--cache-from` the previous tag.\n  4. Extract the installed-package manifest from the built image and compute the identity hash per KTD3. Compare against the previous build record's hash; exit 0 without pushing when equal.\n  5. Push only when the hash differs.\n- **Execution note:** Prove the two guards before the happy path. A build script that publishes correctly but silently overwrites a tag is worse than one that does not build yet.\n- **Patterns to follow:** the registry login and `--cache-from` usage in the existing `Build` job in `.gitlab-ci.yml`.\n- **Test scenarios:**\n  - Covers AE3. Running against an image whose candidate tag already exists in the registry fails the job with a message naming the tag, and pushes nothing.\n  - Covers AE1. Running twice with no upstream change publishes on the first run and exits 0 without a push on the second.\n  - Covers AE2. Running after a pinned base package moves produces a different identity hash and pushes a new tag.\n  - A malformed or missing `image.yml` fails with a message naming the file, not a shell trace.\n  - A registry query that fails on network error fails the job rather than falling through to a push.\n- **Verification:** Two consecutive local runs against an unchanged image produce exactly one pushed tag.\n\n---\nPlan: `docs/plans/2026-08-30-1440-feat-ci-image-factory-plan.md` — see the `### U2. Build-and-publish core` unit, plus the Verification Contract and Definition of Done.\nMilestone: CI Image Factory",
+      "state": "closed",
+      "created_at": "2026-08-30T19:11:04.111Z",
+      "updated_at": "2026-09-01T23:11:52.077Z",
+      "closed_at": "2026-09-01T23:11:52.058Z",
+      "closed_by": {
+        "id": 9820378,
+        "username": "DomPolizzi",
+        "public_email": "",
+        "name": "Dominic",
+        "state": "active",
+        "locked": false,
+        "avatar_url": "https://gitlab.com/uploads/-/system/user/avatar/9820378/avatar.png?v=1788482984",
+        "web_url": "https://gitlab.com/DomPolizzi"
+      },
+      "labels": [
+        "image-factory",
+        "u2"
+      ],
+      "milestone": {
+        "id": 7578343,
+        "iid": 1,
+        "project_id": 55437356,
+        "title": "CI Image Factory",
+        "description": "Turn ci-cd into a container image factory: a flat images/* catalog with declarative pins, matrix-free parallel builds, immutable <toolver>-<YYYYMMDD> tags in the group registry, per-build vulnerability scanning, and append-only per-tag audit records.\n\nPlan: docs/plans/2026-08-30-1440-feat-ci-image-factory-plan.md\nObjective: pipelines get their toolchain pre-materialized instead of assembling it per job. Success metric is wall-clock feedback latency, measured against the aura-brawlers release-build-linux baseline of 3243s.",
+        "state": "active",
+        "created_at": "2026-08-30T19:10:51.976Z",
+        "updated_at": "2026-08-30T19:10:51.976Z",
+        "due_date": null,
+        "start_date": null,
+        "expired": false,
+        "web_url": "https://gitlab.com/void-realm-solutions/ci-cd/-/milestones/1"
+      },
+      "assignees": [],
+      "author": {
+        "id": 41644654,
+        "username": "group_80855973_bot_76fbf6745b704a951bfab24ca28fe879",
+        "public_email": null,
+        "name": "Ayror",
+        "state": "active",
+        "locked": false,
+        "avatar_url": "https://secure.gravatar.com/avatar/db1ed276784d338bb08e471049a0552d8e97c4508f55e42d866cac00b7f4d665?s=80&d=identicon",
+        "web_url": "https://gitlab.com/group_80855973_bot_76fbf6745b704a951bfab24ca28fe879"
+      },
+      "type": "ISSUE",
+      "assignee": null,
+      "user_notes_count": 0,
+      "merge_requests_count": 1,
+      "upvotes": 0,
+      "downvotes": 0,
+      "start_date": null,
+      "due_date": null,
+      "confidential": false,
+      "discussion_locked": null,
+      "issue_type": "issue",
+      "web_url": "https://gitlab.com/void-realm-solutions/ci-cd/-/work_items/2",
+      "time_stats": {
+        "time_estimate": 0,
+        "total_time_spent": 0,
+        "human_time_estimate": null,
+        "human_total_time_spent": null
+      },
+      "task_completion_status": {
+        "count": 0,
+        "completed_count": 0
+      },
+      "weight": null,
+      "blocking_issues_count": 0,
+      "has_tasks": true,
+      "task_status": "0 of 0 checklist items completed",
+      "_links": {
+        "self": "https://gitlab.com/api/v4/projects/55437356/issues/2",
+        "notes": "https://gitlab.com/api/v4/projects/55437356/issues/2/notes",
+        "award_emoji": "https://gitlab.com/api/v4/projects/55437356/issues/2/award_emoji",
+        "project": "https://gitlab.com/api/v4/projects/55437356",
+        "closed_as_duplicate_of": null
+      },
+      "references": {
+        "short": "#2",
+        "relative": "#2",
+        "full": "void-realm-solutions/ci-cd#2"
+      },
+      "severity": "UNKNOWN",
+      "moved_to_id": null,
+      "imported": false,
+      "imported_from": "none",
+      "service_desk_reply_to": null,
+      "epic_iid": null,
+      "epic": null,
+      "iteration": null,
+      "issue_link_id": 9379617,
+      "link_type": "blocks",
+      "link_created_at": "2026-08-30T19:11:36.678Z",
+      "link_updated_at": "2026-08-30T19:11:36.678Z"
+    }
+  ]
+}

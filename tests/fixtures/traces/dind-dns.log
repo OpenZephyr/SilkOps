@@ -1,0 +1,175 @@
+2026-09-01T23:42:12.604246Z 00O [0KRunning with gitlab-runner 19.3.1 (a16f5092)[0;m
+2026-09-01T23:42:12.604267Z 00O [0K  on k8s.saas-linux-small-amd64.runners-manager.gitlab.com/default nezyxEJex, system ID: r_GkGiOJaIPf9h[0;m
+2026-09-01T23:42:12.604274Z 00O [0K  feature flags: FF_USE_FASTZIP:true, FF_USE_GIT_PROACTIVE_AUTH:true, FF_HASH_CACHE_KEYS:true[0;m
+2026-09-01T23:42:12.604300Z 00O [0K[36;1mResolving secrets[0;m[0;m
+2026-09-01T23:42:12.604531Z 00O section_start:1788306132:prepare_executor[0K
+2026-09-01T23:42:12.604535Z 00O+[0K[36;1mPreparing the "docker+machine" executor[0;m[0;m
+2026-09-01T23:42:12.785058Z 00O [0KUsing Docker executor with image docker:27.3 ...[0;m
+2026-09-01T23:42:12.785967Z 00O [0KUsing helper image:  registry.gitlab.com/gitlab-org/gitlab-runner/gitlab-runner-helper:x86_64-v19.3.1[0;m
+2026-09-01T23:42:12.786004Z 00O [0KUsing effective pull policy of [always] for container registry.gitlab.com/gitlab-org/gitlab-runner/gitlab-runner-helper:x86_64-v19.3.1[0;m
+2026-09-01T23:42:12.786778Z 00O [0KAuthenticating with credentials from job payload (GitLab Registry)[0;m
+2026-09-01T23:42:12.786791Z 00O [0KPulling docker image registry.gitlab.com/gitlab-org/gitlab-runner/gitlab-runner-helper:x86_64-v19.3.1 ...[0;m
+2026-09-01T23:42:14.138447Z 00O [0KUsing docker image sha256:0dec7ad9b069e592211b7128f097fc6b0ffe21baf9be8da90b668eb2c7d0c615 for registry.gitlab.com/gitlab-org/gitlab-runner/gitlab-runner-helper:x86_64-v19.3.1 with digest registry.gitlab.com/gitlab-org/gitlab-runner/gitlab-runner-helper@sha256:ce41f9ba0465950d1c7e290e38e33ea9064385b4015ba4fa4b12b318a6242682 ...[0;m
+2026-09-01T23:42:15.539372Z 00O [0KStarting service docker:27.3-dind...[0;m
+2026-09-01T23:42:15.539394Z 00O [0KUsing effective pull policy of [always] for container docker:27.3-dind[0;m
+2026-09-01T23:42:15.540100Z 00O [0KPulling docker image docker:27.3-dind ...[0;m
+2026-09-01T23:42:20.000355Z 00O [0KUsing docker image sha256:37123e40ec5295ac68158ace2d5c302a8a5d33f6e40b9a3397be063f941d3705 for docker:27.3-dind with digest docker@sha256:6ca9a6811085e2cf769cbac04bc47daf66629102990391caab7cf37426e939da ...[0;m
+2026-09-01T23:42:22.724188Z 00O [0;33mWARNING: Skipping alias "docker" for service "docker:27.3-dind" (services[0]): alias is already in use by another service.[0;m
+2026-09-01T23:42:22.725583Z 00O [0KStarting service registry:2...[0;m
+2026-09-01T23:42:22.725604Z 00O [0KUsing effective pull policy of [always] for container registry:2[0;m
+2026-09-01T23:42:22.726292Z 00O [0KPulling docker image registry:2 ...[0;m
+2026-09-01T23:42:24.496676Z 00O [0KUsing docker image sha256:26b2eb03618e749084668eaff68cff8f81dda12d06ac641be7a6398b82a6f25b for registry:2 with digest registry@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373 ...[0;m
+2026-09-01T23:42:24.803751Z 00O [0;33mWARNING: Skipping alias "registry" for service "registry:2" (services[1]): alias is already in use by another service.[0;m
+2026-09-01T23:42:24.803811Z 00O [0KWaiting for services to be up and running (timeout 30 seconds)...[0;m
+2026-09-01T23:42:26.431156Z 00O [0KUsing effective pull policy of [always] for container docker:27.3[0;m
+2026-09-01T23:42:26.431892Z 00O [0KPulling docker image docker:27.3 ...[0;m
+2026-09-01T23:42:26.792829Z 00O [0KUsing docker image sha256:37123e40ec5295ac68158ace2d5c302a8a5d33f6e40b9a3397be063f941d3705 for docker:27.3 with digest docker@sha256:6ca9a6811085e2cf769cbac04bc47daf66629102990391caab7cf37426e939da ...[0;m
+2026-09-01T23:42:26.792921Z 00O section_end:1788306146:prepare_executor[0K
+2026-09-01T23:42:26.793051Z 00O+section_start:1788306146:prepare_script[0K
+2026-09-01T23:42:26.793059Z 00O+[0K[36;1mPreparing environment[0;m[0;m
+2026-09-01T23:42:26.793915Z 00O [0KUsing effective pull policy of [always] for container sha256:0dec7ad9b069e592211b7128f097fc6b0ffe21baf9be8da90b668eb2c7d0c615[0;m
+2026-09-01T23:42:27.063410Z 01O Running on runner-nezyxejex-project-55437356-concurrent-0 via runner-nezyxejex-s-l-s-amd64-1788306017-bf3776ad...
+2026-09-01T23:42:27.188223Z 00O section_end:1788306147:prepare_script[0K
+2026-09-01T23:42:27.188900Z 00O+section_start:1788306147:get_sources[0K
+2026-09-01T23:42:27.188907Z 00O+[0K[36;1mGetting source from Git repository[0;m[0;m
+2026-09-01T23:42:27.446823Z 01O [32;1mGitaly correlation ID: f35971db035447ac83e0ff97a4777a15[0;m
+2026-09-01T23:42:27.449839Z 01O [32;1mFetching changes with git depth set to 20...[0;m
+2026-09-01T23:42:27.452299Z 01O Initialized empty Git repository in /builds/void-realm-solutions/ci-cd/.git/
+2026-09-01T23:42:27.453811Z 01O [32;1mCreated fresh repository.[0;m
+2026-09-01T23:42:28.022940Z 01O [32;1mChecking out fe35c2a4 as detached HEAD (ref is refs/merge-requests/4/head)...[0;m
+2026-09-01T23:42:28.048410Z 01O 
+2026-09-01T23:42:28.048425Z 01O [32;1mSkipping Git submodules setup[0;m
+2026-09-01T23:42:28.048445Z 01O [32;1m$ git remote set-url origin "${CI_REPOSITORY_URL}" || echo 'Not a git repository; skipping'[0;m
+2026-09-01T23:42:28.176190Z 00O section_end:1788306148:get_sources[0K
+2026-09-01T23:42:28.178002Z 00O+section_start:1788306148:step_script[0K
+2026-09-01T23:42:28.178017Z 00O+[0K[36;1mExecuting "step_script" stage of the job script[0;m[0;m
+2026-09-01T23:42:28.178031Z 00O [0KUsing effective pull policy of [always] for container docker:27.3[0;m
+2026-09-01T23:42:28.179344Z 00O [0KUsing docker image sha256:37123e40ec5295ac68158ace2d5c302a8a5d33f6e40b9a3397be063f941d3705 for docker:27.3 with digest docker@sha256:6ca9a6811085e2cf769cbac04bc47daf66629102990391caab7cf37426e939da ...[0;m
+2026-09-01T23:42:28.443075Z 01O [32;1m$ apk add --no-cache bash curl jq yq git python3[0;m
+2026-09-01T23:42:28.446038Z 01O fetch https://dl-cdn.alpinelinux.org/alpine/v3.20/main/x86_64/APKINDEX.tar.gz
+2026-09-01T23:42:28.579087Z 01O fetch https://dl-cdn.alpinelinux.org/alpine/v3.20/community/x86_64/APKINDEX.tar.gz
+2026-09-01T23:42:28.759882Z 01O (1/19) Installing readline (8.2.10-r0)
+2026-09-01T23:42:28.774901Z 01O (2/19) Installing bash (5.2.26-r0)
+2026-09-01T23:42:28.797338Z 01O Executing bash-5.2.26-r0.post-install
+2026-09-01T23:42:28.798872Z 01O (3/19) Upgrading libcurl (8.11.0-r2 -> 8.14.1-r2)
+2026-09-01T23:42:28.815942Z 01O (4/19) Installing curl (8.14.1-r2)
+2026-09-01T23:42:28.836600Z 01O (5/19) Installing oniguruma (6.9.9-r0)
+2026-09-01T23:42:28.851917Z 01O (6/19) Installing jq (1.7.1-r0)
+2026-09-01T23:42:28.867793Z 01O (7/19) Installing libbz2 (1.0.8-r6)
+2026-09-01T23:42:28.883286Z 01O (8/19) Installing libffi (3.4.6-r0)
+2026-09-01T23:42:28.899072Z 01O (9/19) Installing gdbm (1.23-r1)
+2026-09-01T23:42:28.912652Z 01O (10/19) Installing libgcc (13.2.1_git20240309-r1)
+2026-09-01T23:42:28.926127Z 01O (11/19) Installing libstdc++ (13.2.1_git20240309-r1)
+2026-09-01T23:42:28.949314Z 01O (12/19) Installing mpdecimal (4.0.0-r0)
+2026-09-01T23:42:28.963183Z 01O (13/19) Installing libpanelw (6.4_p20240420-r2)
+2026-09-01T23:42:28.975846Z 01O (14/19) Installing sqlite-libs (3.45.3-r3)
+2026-09-01T23:42:28.996475Z 01O (15/19) Installing python3 (3.12.13-r0)
+2026-09-01T23:42:29.119098Z 01O (16/19) Installing python3-pycache-pyc0 (3.12.13-r0)
+2026-09-01T23:42:29.198803Z 01O (17/19) Installing pyc (3.12.13-r0)
+2026-09-01T23:42:29.211130Z 01O (18/19) Installing python3-pyc (3.12.13-r0)
+2026-09-01T23:42:29.223588Z 01O (19/19) Installing yq-go (4.44.1-r2)
+2026-09-01T23:42:29.284661Z 01O Executing busybox-1.36.1-r29.trigger
+2026-09-01T23:42:29.288203Z 01O OK: 97 MiB in 91 packages
+2026-09-01T23:42:29.330782Z 01O [32;1m$ mkdir -p "$FACTORY_TEST_TMPDIR"[0;m
+2026-09-01T23:42:29.331219Z 01O [32;1m$ docker info --format '{{json .RegistryConfig.InsecureRegistryCIDRs}} {{json .RegistryConfig.IndexConfigs}}'[0;m
+2026-09-01T23:42:29.377151Z 01O ["127.0.0.0/8"] {"docker.io":{"Name":"docker.io","Mirrors":[],"Secure":true,"Official":true},"registry:5000":{"Name":"registry:5000","Mirrors":[],"Secure":false,"Official":false}}
+2026-09-01T23:42:29.378450Z 01O [32;1m$ docker run --rm curlimages/curl:8.10.1 -sS -m 10 "http://${FACTORY_TEST_REGISTRY}/v2/" && echo "daemon-side registry reachable"[0;m
+2026-09-01T23:42:29.400148Z 01E Unable to find image 'curlimages/curl:8.10.1' locally
+2026-09-01T23:42:29.872125Z 01E 8.10.1: Pulling from curlimages/curl
+2026-09-01T23:42:29.993305Z 01E 43c4264eed91: Pulling fs layer
+2026-09-01T23:42:29.993312Z 01E b68d62cb323c: Pulling fs layer
+2026-09-01T23:42:29.993314Z 01E 4ca545ee6d5d: Pulling fs layer
+2026-09-01T23:42:30.103006Z 01E 4ca545ee6d5d: Verifying Checksum
+2026-09-01T23:42:30.103015Z 01E 4ca545ee6d5d: Download complete
+2026-09-01T23:42:30.195365Z 01E 43c4264eed91: Download complete
+2026-09-01T23:42:30.203526Z 01E b68d62cb323c: Verifying Checksum
+2026-09-01T23:42:30.203534Z 01E b68d62cb323c: Download complete
+2026-09-01T23:42:30.275799Z 01E 43c4264eed91: Pull complete
+2026-09-01T23:42:30.363105Z 01E b68d62cb323c: Pull complete
+2026-09-01T23:42:30.378613Z 01E 4ca545ee6d5d: Pull complete
+2026-09-01T23:42:30.389486Z 01E Digest: sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b
+2026-09-01T23:42:30.392406Z 01E Status: Downloaded newer image for curlimages/curl:8.10.1
+2026-09-01T23:42:31.095525Z 01E curl: (6) Could not resolve host: registry
+2026-09-01T23:42:31.183636Z 01O [32;1m$ bash tests/test-commit-records.sh[0;m
+2026-09-01T23:42:31.191428Z 01E warning: You appear to have cloned an empty repository.
+2026-09-01T23:42:31.224269Z 01O PASS T1 record commit pushed to default branch with [skip ci] title, 3 files
+2026-09-01T23:42:31.228784Z 01E warning: You appear to have cloned an empty repository.
+2026-09-01T23:42:31.246532Z 01O PASS T2 missing token fails with named error
+2026-09-01T23:42:31.250770Z 01E warning: You appear to have cloned an empty repository.
+2026-09-01T23:42:31.305589Z 01O PASS T3 concurrent push survives via rebase retry
+2026-09-01T23:42:31.309955Z 01E warning: You appear to have cloned an empty repository.
+2026-09-01T23:42:31.330285Z 01O PASS T4 no changed records is a clean no-op
+2026-09-01T23:42:31.334674Z 01E warning: You appear to have cloned an empty repository.
+2026-09-01T23:42:31.385730Z 01O PASS T5 same-path conflict aborts cleanly with named error
+2026-09-01T23:42:31.385738Z 01O ALL TESTS PASSED
+2026-09-01T23:42:31.395394Z 01O [32;1m$ python3 tests/test-render-record.py[0;m
+2026-09-01T23:42:31.428988Z 01E test_existing_record_refused_untouched (__main__.RenderRecordTest.test_existing_record_refused_untouched) ... ok
+2026-09-01T23:42:31.481468Z 01E test_first_build_no_previous (__main__.RenderRecordTest.test_first_build_no_previous) ... ok
+2026-09-01T23:42:31.507226Z 01E test_high_finding_recorded_exit_zero (__main__.RenderRecordTest.test_high_finding_recorded_exit_zero) ... ok
+2026-09-01T23:42:31.533011Z 01E test_index_regeneration_idempotent (__main__.RenderRecordTest.test_index_regeneration_idempotent) ... ok
+2026-09-01T23:42:31.583436Z 01E test_second_build_version_change_diff (__main__.RenderRecordTest.test_second_build_version_change_diff) ... ok
+2026-09-01T23:42:31.634852Z 01E test_unknown_previous_schema_version_refused (__main__.RenderRecordTest.test_unknown_previous_schema_version_refused) ... ok
+2026-09-01T23:42:31.686724Z 01E test_zero_vulnerabilities_explicit (__main__.RenderRecordTest.test_zero_vulnerabilities_explicit) ... ok
+2026-09-01T23:42:31.713160Z 01E 
+2026-09-01T23:42:31.713161Z 01E ----------------------------------------------------------------------
+2026-09-01T23:42:31.713163Z 01E Ran 7 tests in 0.284s
+2026-09-01T23:42:31.713164Z 01E 
+2026-09-01T23:42:31.713165Z 01E OK
+2026-09-01T23:42:31.719989Z 01O [32;1m$ bash tests/test-scan-image.sh[0;m
+2026-09-01T23:42:31.724231Z 01O PASS T1 missing inputs fail with named error
+2026-09-01T23:42:31.727818Z 01O PASS T2 empty full_ref fails
+2026-09-01T23:42:31.761604Z 01O PASS T3 unreachable daemon is fatal
+2026-09-01T23:42:49.385341Z 01O PASS T4 scan emits trivy.json and CycloneDX sbom
+2026-09-01T23:42:49.385349Z 01O ALL TESTS PASSED
+2026-09-01T23:42:49.486216Z 01O [32;1m$ bash tests/test-build-image.sh[0;m
+2026-09-01T23:42:51.341597Z 01O FAIL T1: rc=1 meta=none tags=
+2026-09-01T23:42:51.342238Z 01O --- T1 stderr:
+2026-09-01T23:42:51.342622Z 01O #6 writing image sha256:4934c6540122e0800d5dec622b67b6f11ecfc56030c3b729e2a13a408f0a33dc done
+2026-09-01T23:42:51.342630Z 01O #6 naming to registry:5000/factory-test/t1/tinyimg:1.0.0-20260901 done
+2026-09-01T23:42:51.342631Z 01O #6 DONE 0.0s
+2026-09-01T23:42:51.342632Z 01O Get "http://registry:5000/v2/": dial tcp: lookup registry on 169.254.169.254:53: no such host
+2026-09-01T23:42:51.342633Z 01O build-image: docker push failed for registry:5000/factory-test/t1/tinyimg:1.0.0-20260901
+2026-09-01T23:42:51.342640Z 01O ---
+2026-09-01T23:42:52.022322Z 01O FAIL T2: rc=1 out=build-image: pushing registry:5000/factory-test/t2/tinyimg:1.0.0-20260901 tags=
+2026-09-01T23:42:52.023229Z 01O --- T2 stderr:
+2026-09-01T23:42:52.023460Z 01O ------
+2026-09-01T23:42:52.023462Z 01O  > importing cache manifest from registry:5000/factory-test/t2/tinyimg:1.0.0-20260801:
+2026-09-01T23:42:52.023463Z 01O ------
+2026-09-01T23:42:52.023464Z 01O Get "http://registry:5000/v2/": dial tcp: lookup registry on 169.254.169.254:53: no such host
+2026-09-01T23:42:52.023465Z 01O build-image: docker push failed for registry:5000/factory-test/t2/tinyimg:1.0.0-20260901
+2026-09-01T23:42:52.023561Z 01O ---
+2026-09-01T23:42:52.731143Z 01O FAIL T3: rc=1 err=build-image: docker push failed for registry:5000/factory-test/t1/tinyimg:1.0.0-20260901
+2026-09-01T23:42:52.731583Z 01O --- T3 stderr:
+2026-09-01T23:42:52.731908Z 01O #6 writing image sha256:4934c6540122e0800d5dec622b67b6f11ecfc56030c3b729e2a13a408f0a33dc done
+2026-09-01T23:42:52.731913Z 01O #6 naming to registry:5000/factory-test/t1/tinyimg:1.0.0-20260901 done
+2026-09-01T23:42:52.731913Z 01O #6 DONE 0.0s
+2026-09-01T23:42:52.731914Z 01O Get "http://registry:5000/v2/": dial tcp: lookup registry on 169.254.169.254:53: no such host
+2026-09-01T23:42:52.731952Z 01O build-image: docker push failed for registry:5000/factory-test/t1/tinyimg:1.0.0-20260901
+2026-09-01T23:42:52.731956Z 01O ---
+2026-09-01T23:42:53.405981Z 01O FAIL T7: rc=0 (expected 0 + warning + published=false)
+2026-09-01T23:42:53.406679Z 01O --- T7 stderr:
+2026-09-01T23:42:53.406987Z 01O #6 exporting layers done
+2026-09-01T23:42:53.406994Z 01O #6 preparing layers for inline cache done
+2026-09-01T23:42:53.406997Z 01O #6 writing image sha256:4934c6540122e0800d5dec622b67b6f11ecfc56030c3b729e2a13a408f0a33dc done
+2026-09-01T23:42:53.406998Z 01O #6 naming to registry:5000/factory-test/t1/tinyimg:1.0.0-20260901 done
+2026-09-01T23:42:53.407000Z 01O #6 DONE 0.0s
+2026-09-01T23:42:53.407012Z 01O ---
+2026-09-01T23:42:54.308792Z 01O FAIL T4: rc=1 hash= vs  tags=
+2026-09-01T23:42:54.309434Z 01O --- T4 stderr:
+2026-09-01T23:42:54.309814Z 01O ------
+2026-09-01T23:42:54.309817Z 01O  > importing cache manifest from registry:5000/factory-test/t1/tinyimg:1.0.0-20260801:
+2026-09-01T23:42:54.309819Z 01O ------
+2026-09-01T23:42:54.309820Z 01O Get "http://registry:5000/v2/": dial tcp: lookup registry on 169.254.169.254:53: no such host
+2026-09-01T23:42:54.309821Z 01O build-image: docker push failed for registry:5000/factory-test/t1/tinyimg:1.0.1-20260901
+2026-09-01T23:42:54.309826Z 01O ---
+2026-09-01T23:42:54.337945Z 01O PASS T5 missing/malformed image.yml fails with clear error, no trace
+2026-09-01T23:42:54.370847Z 01O PASS T6 unreachable registry is fatal, not treated as tag-absent
+2026-09-01T23:42:54.370857Z 01O 
+2026-09-01T23:42:54.370866Z 01O TESTS FAILED
+2026-09-01T23:42:54.535312Z 00O section_end:1788306174:step_script[0K
+2026-09-01T23:42:54.537403Z 00O+section_start:1788306174:cleanup_file_variables[0K
+2026-09-01T23:42:54.537466Z 00O+[0K[36;1mCleaning up project directory and file based variables[0;m[0;m
+2026-09-01T23:42:54.948419Z 00O section_end:1788306174:cleanup_file_variables[0K
+2026-09-01T23:42:55.095315Z 00O+[32;1mContainer runner-nezyxejex-project-55437356-concurrent-0-52fdaa9b5dc83032-registry-1 disconnected from network bridge[0;m
+2026-09-01T23:42:55.190785Z 00O [32;1mContainer runner-nezyxejex-project-55437356-concurrent-0-52fdaa9b5dc83032-docker-0 disconnected from network bridge[0;m
+2026-09-01T23:42:55.297143Z 00O [31;1mERROR: Job failed: exit code 1[0;m

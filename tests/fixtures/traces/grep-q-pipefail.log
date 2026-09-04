@@ -1,0 +1,158 @@
+2026-09-03T03:05:45.217192Z 00O [0KRunning with gitlab-runner 19.2.0~pre.1355.g471b878c (471b878c)[0;m
+2026-09-03T03:05:45.217211Z 00O [0K  on green-2.saas-linux-small-amd64.runners-manager.gitlab.com/default ns46NMmJT, system ID: s_85d7af184313[0;m
+2026-09-03T03:05:45.217220Z 00O [0K  feature flags: FF_USE_FASTZIP:true, FF_USE_GIT_PROACTIVE_AUTH:true, FF_HASH_CACHE_KEYS:true[0;m
+2026-09-03T03:05:45.217249Z 00O [0K[36;1mResolving secrets[0;m[0;m
+2026-09-03T03:05:45.217458Z 00O section_start:1788404745:prepare_executor[0K
+2026-09-03T03:05:45.217464Z 00O+[0K[36;1mPreparing the "docker+machine" executor[0;m[0;m
+2026-09-03T03:05:45.366093Z 00O [0KUsing Docker executor with image docker:27.3 ...[0;m
+2026-09-03T03:05:49.908066Z 00O [0KStarting service docker:27.3-dind...[0;m
+2026-09-03T03:05:49.908077Z 00O [0KUsing effective pull policy of [always] for container docker:27.3-dind[0;m
+2026-09-03T03:05:49.908757Z 00O [0KPulling docker image docker:27.3-dind ...[0;m
+2026-09-03T03:05:56.936375Z 00O [0KUsing docker image sha256:37123e40ec5295ac68158ace2d5c302a8a5d33f6e40b9a3397be063f941d3705 for docker:27.3-dind with digest docker@sha256:6ca9a6811085e2cf769cbac04bc47daf66629102990391caab7cf37426e939da ...[0;m
+2026-09-03T03:05:59.685161Z 00O [0KWaiting for services to be up and running (timeout 30 seconds)...[0;m
+2026-09-03T03:06:02.780314Z 00O [0KUsing effective pull policy of [always] for container docker:27.3[0;m
+2026-09-03T03:06:02.780937Z 00O [0KPulling docker image docker:27.3 ...[0;m
+2026-09-03T03:06:03.278781Z 00O [0KUsing docker image sha256:37123e40ec5295ac68158ace2d5c302a8a5d33f6e40b9a3397be063f941d3705 for docker:27.3 with digest docker@sha256:6ca9a6811085e2cf769cbac04bc47daf66629102990391caab7cf37426e939da ...[0;m
+2026-09-03T03:06:03.278894Z 00O section_end:1788404763:prepare_executor[0K
+2026-09-03T03:06:03.279024Z 00O+section_start:1788404763:prepare_script[0K
+2026-09-03T03:06:03.279031Z 00O+[0K[36;1mPreparing environment[0;m[0;m
+2026-09-03T03:06:03.280500Z 00O [0KUsing effective pull policy of [always] for container sha256:d75ff1249db88409eb3407eace3f610a2914a2886ee6d55542ea8bfc56e1370e[0;m
+2026-09-03T03:06:03.781878Z 01O Running on runner-ns46nmmjt-project-55437356-concurrent-0 via runner-ns46nmmjt-s-l-s-amd64-1788404711-2d1d5630...
+2026-09-03T03:06:04.027367Z 00O section_end:1788404764:prepare_script[0K
+2026-09-03T03:06:04.027932Z 00O+section_start:1788404764:get_sources[0K
+2026-09-03T03:06:04.027939Z 00O+[0K[36;1mGetting source from Git repository[0;m[0;m
+2026-09-03T03:06:04.535065Z 01O [32;1mGitaly correlation ID: 38847ad818a5467bb512212f2ed7ba40[0;m
+2026-09-03T03:06:04.544518Z 01O [32;1mFetching changes with git depth set to 20...[0;m
+2026-09-03T03:06:04.550796Z 01O Initialized empty Git repository in /builds/void-realm-solutions/ci-cd/.git/
+2026-09-03T03:06:04.555278Z 01O [32;1mCreated fresh repository.[0;m
+2026-09-03T03:06:05.210462Z 01O [32;1mChecking out 48a09a8c as detached HEAD (ref is refs/merge-requests/4/head)...[0;m
+2026-09-03T03:06:05.270750Z 01O 
+2026-09-03T03:06:05.270757Z 01O [32;1mSkipping Git submodules setup[0;m
+2026-09-03T03:06:05.270784Z 01O [32;1m$ git remote set-url origin "${CI_REPOSITORY_URL}" || echo 'Not a git repository; skipping'[0;m
+2026-09-03T03:06:05.467846Z 00O section_end:1788404765:get_sources[0K
+2026-09-03T03:06:05.468914Z 00O+section_start:1788404765:step_script[0K
+2026-09-03T03:06:05.468923Z 00O+[0K[36;1mExecuting "step_script" stage of the job script[0;m[0;m
+2026-09-03T03:06:05.468933Z 00O [0KUsing effective pull policy of [always] for container docker:27.3[0;m
+2026-09-03T03:06:05.472242Z 00O [0KUsing docker image sha256:37123e40ec5295ac68158ace2d5c302a8a5d33f6e40b9a3397be063f941d3705 for docker:27.3 with digest docker@sha256:6ca9a6811085e2cf769cbac04bc47daf66629102990391caab7cf37426e939da ...[0;m
+2026-09-03T03:06:05.951671Z 01O [32;1m$ apk add --no-cache bash curl jq yq git python3[0;m
+2026-09-03T03:06:05.957276Z 01O fetch https://dl-cdn.alpinelinux.org/alpine/v3.20/main/x86_64/APKINDEX.tar.gz
+2026-09-03T03:06:06.097263Z 01O fetch https://dl-cdn.alpinelinux.org/alpine/v3.20/community/x86_64/APKINDEX.tar.gz
+2026-09-03T03:06:06.439868Z 01O (1/19) Installing readline (8.2.10-r0)
+2026-09-03T03:06:06.457238Z 01O (2/19) Installing bash (5.2.26-r0)
+2026-09-03T03:06:06.485339Z 01O Executing bash-5.2.26-r0.post-install
+2026-09-03T03:06:06.489236Z 01O (3/19) Upgrading libcurl (8.11.0-r2 -> 8.14.1-r2)
+2026-09-03T03:06:06.533016Z 01O (4/19) Installing curl (8.14.1-r2)
+2026-09-03T03:06:06.551032Z 01O (5/19) Installing oniguruma (6.9.9-r0)
+2026-09-03T03:06:06.569541Z 01O (6/19) Installing jq (1.7.1-r0)
+2026-09-03T03:06:06.589098Z 01O (7/19) Installing libbz2 (1.0.8-r6)
+2026-09-03T03:06:06.603390Z 01O (8/19) Installing libffi (3.4.6-r0)
+2026-09-03T03:06:06.617618Z 01O (9/19) Installing gdbm (1.23-r1)
+2026-09-03T03:06:06.632242Z 01O (10/19) Installing libgcc (13.2.1_git20240309-r1)
+2026-09-03T03:06:06.652724Z 01O (11/19) Installing libstdc++ (13.2.1_git20240309-r1)
+2026-09-03T03:06:06.684934Z 01O (12/19) Installing mpdecimal (4.0.0-r0)
+2026-09-03T03:06:06.708713Z 01O (13/19) Installing libpanelw (6.4_p20240420-r2)
+2026-09-03T03:06:06.722401Z 01O (14/19) Installing sqlite-libs (3.45.3-r3)
+2026-09-03T03:06:06.748582Z 01O (15/19) Installing python3 (3.12.13-r0)
+2026-09-03T03:06:06.951661Z 01O (16/19) Installing python3-pycache-pyc0 (3.12.13-r0)
+2026-09-03T03:06:07.086685Z 01O (17/19) Installing pyc (3.12.13-r0)
+2026-09-03T03:06:07.099927Z 01O (18/19) Installing python3-pyc (3.12.13-r0)
+2026-09-03T03:06:07.113179Z 01O (19/19) Installing yq-go (4.44.1-r2)
+2026-09-03T03:06:07.199405Z 01O Executing busybox-1.36.1-r29.trigger
+2026-09-03T03:06:07.207766Z 01O OK: 97 MiB in 91 packages
+2026-09-03T03:06:07.301101Z 01O [32;1m$ mkdir -p "$FACTORY_TEST_TMPDIR"[0;m
+2026-09-03T03:06:07.301959Z 01O [32;1m$ bash tests/test-commit-records.sh[0;m
+2026-09-03T03:06:07.319142Z 01E warning: You appear to have cloned an empty repository.
+2026-09-03T03:06:07.396029Z 01O PASS T1 record commit pushed to default branch with [skip ci] title, 3 files
+2026-09-03T03:06:07.407208Z 01E warning: You appear to have cloned an empty repository.
+2026-09-03T03:06:07.448348Z 01O PASS T2 missing token fails with named error
+2026-09-03T03:06:07.459905Z 01E warning: You appear to have cloned an empty repository.
+2026-09-03T03:06:07.588930Z 01O PASS T3 concurrent push survives via rebase retry
+2026-09-03T03:06:07.600789Z 01E warning: You appear to have cloned an empty repository.
+2026-09-03T03:06:07.647368Z 01O PASS T4 no changed records is a clean no-op
+2026-09-03T03:06:07.658404Z 01E warning: You appear to have cloned an empty repository.
+2026-09-03T03:06:07.780757Z 01O PASS T5 same-path conflict aborts cleanly with named error
+2026-09-03T03:06:07.780761Z 01O ALL TESTS PASSED
+2026-09-03T03:06:07.803316Z 01O [32;1m$ python3 tests/test-render-record.py[0;m
+2026-09-03T03:06:07.872007Z 01E test_existing_record_refused_untouched (__main__.RenderRecordTest.test_existing_record_refused_untouched) ... ok
+2026-09-03T03:06:07.974488Z 01E test_first_build_no_previous (__main__.RenderRecordTest.test_first_build_no_previous) ... ok
+2026-09-03T03:06:08.033268Z 01E test_high_finding_recorded_exit_zero (__main__.RenderRecordTest.test_high_finding_recorded_exit_zero) ... ok
+2026-09-03T03:06:08.081779Z 01E test_index_regeneration_idempotent (__main__.RenderRecordTest.test_index_regeneration_idempotent) ... ok
+2026-09-03T03:06:08.183492Z 01E test_second_build_version_change_diff (__main__.RenderRecordTest.test_second_build_version_change_diff) ... ok
+2026-09-03T03:06:08.299551Z 01E test_unknown_previous_schema_version_refused (__main__.RenderRecordTest.test_unknown_previous_schema_version_refused) ... ok
+2026-09-03T03:06:08.409807Z 01E test_zero_vulnerabilities_explicit (__main__.RenderRecordTest.test_zero_vulnerabilities_explicit) ... ok
+2026-09-03T03:06:08.463780Z 01E 
+2026-09-03T03:06:08.463781Z 01E ----------------------------------------------------------------------
+2026-09-03T03:06:08.463782Z 01E Ran 7 tests in 0.592s
+2026-09-03T03:06:08.463782Z 01E 
+2026-09-03T03:06:08.463783Z 01E OK
+2026-09-03T03:06:08.474611Z 01O [32;1m$ bash tests/test-scan-image.sh[0;m
+2026-09-03T03:06:08.482176Z 01O PASS T1 missing inputs fail with named error
+2026-09-03T03:06:08.489060Z 01O PASS T2 empty full_ref fails
+2026-09-03T03:06:08.543694Z 01O PASS T3 unreachable daemon is fatal
+2026-09-03T03:06:31.609718Z 01O PASS T4 scan emits trivy.json and CycloneDX sbom
+2026-09-03T03:06:31.609735Z 01O ALL TESTS PASSED
+2026-09-03T03:06:31.842556Z 01O [32;1m$ bash tests/test-build-image.sh[0;m
+2026-09-03T03:06:31.973750Z 01E Unable to find image 'registry:2' locally
+2026-09-03T03:06:32.417618Z 01E 2: Pulling from library/registry
+2026-09-03T03:06:32.559780Z 01E 44cf07d57ee4: Pulling fs layer
+2026-09-03T03:06:32.560601Z 01E bbbdd6c6894b: Pulling fs layer
+2026-09-03T03:06:32.560620Z 01E 8e82f80af0de: Pulling fs layer
+2026-09-03T03:06:32.560620Z 01E 3493bf46cdec: Pulling fs layer
+2026-09-03T03:06:32.560621Z 01E 6d464ea18732: Pulling fs layer
+2026-09-03T03:06:32.560621Z 01E 3493bf46cdec: Waiting
+2026-09-03T03:06:32.560622Z 01E 6d464ea18732: Waiting
+2026-09-03T03:06:32.718166Z 01E bbbdd6c6894b: Verifying Checksum
+2026-09-03T03:06:32.718168Z 01E bbbdd6c6894b: Download complete
+2026-09-03T03:06:32.756745Z 01E 44cf07d57ee4: Verifying Checksum
+2026-09-03T03:06:32.756748Z 01E 44cf07d57ee4: Download complete
+2026-09-03T03:06:32.782519Z 01E 8e82f80af0de: Verifying Checksum
+2026-09-03T03:06:32.783793Z 01E 8e82f80af0de: Download complete
+2026-09-03T03:06:32.827256Z 01E 3493bf46cdec: Verifying Checksum
+2026-09-03T03:06:32.827469Z 01E 3493bf46cdec: Download complete
+2026-09-03T03:06:32.870032Z 01E 6d464ea18732: Verifying Checksum
+2026-09-03T03:06:32.870036Z 01E 6d464ea18732: Download complete
+2026-09-03T03:06:32.938835Z 01E 44cf07d57ee4: Pull complete
+2026-09-03T03:06:33.085610Z 01E bbbdd6c6894b: Pull complete
+2026-09-03T03:06:33.247477Z 01E 8e82f80af0de: Pull complete
+2026-09-03T03:06:33.283252Z 01E 3493bf46cdec: Pull complete
+2026-09-03T03:06:33.314900Z 01E 6d464ea18732: Pull complete
+2026-09-03T03:06:33.333172Z 01E Digest: sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373
+2026-09-03T03:06:33.341117Z 01E Status: Downloaded newer image for registry:2
+2026-09-03T03:06:36.968002Z 01O PASS T1 first publish pushes tag and reports published=true
+2026-09-03T03:06:38.117498Z 01O PASS T2 unchanged identity publishes nothing and exits 0
+2026-09-03T03:06:38.220447Z 01O PASS T3 existing candidate tag refused with message naming the tag
+2026-09-03T03:06:39.395724Z 01O PASS T7 existing tag with FACTORY_PUBLISH=false warns and continues without pushing
+2026-09-03T03:06:46.059820Z 01O --- T4 clauses: rc=0 published=true hash_nonempty=y hash_changed=y tag_seen=false
+2026-09-03T03:06:46.069780Z 01O FAIL T4: rc=0 hash=35960cf0bd4289031e272615ebc8fd1aa03777f2369a91880973dff55e07cc00 vs b36f90d806ff068ee102f255b81f344a85ac7ee1767c52ce4ce4cfa1e9090a46 tags=1.0.1-r2 1.0.0-r1 
+2026-09-03T03:06:46.071389Z 01O --- T4 stderr:
+2026-09-03T03:06:46.072245Z 01O #7 exporting layers 0.0s done
+2026-09-03T03:06:46.072250Z 01O #7 preparing layers for inline cache done
+2026-09-03T03:06:46.072251Z 01O #7 writing image sha256:18cb217ab39b15cfa405284afcb182cbb2356e3b1270a0d2ae8028f156b49741 done
+2026-09-03T03:06:46.072252Z 01O #7 naming to 172.17.0.3:5000/factory-test/t1/tinyimg:1.0.1-r2 done
+2026-09-03T03:06:46.072253Z 01O #7 DONE 0.1s
+2026-09-03T03:06:46.072384Z 01O ---
+2026-09-03T03:06:46.072385Z 01O --- T4 build-meta.json:
+2026-09-03T03:06:46.073273Z 01O {
+2026-09-03T03:06:46.073273Z 01O   "image": "tinyimg",
+2026-09-03T03:06:46.073274Z 01O   "tag": "1.0.1-r2",
+2026-09-03T03:06:46.073274Z 01O   "full_ref": "172.17.0.3:5000/factory-test/t1/tinyimg:1.0.1-r2",
+2026-09-03T03:06:46.073275Z 01O   "identity_hash": "35960cf0bd4289031e272615ebc8fd1aa03777f2369a91880973dff55e07cc00",
+2026-09-03T03:06:46.073275Z 01O   "base_digest": "sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc",
+2026-09-03T03:06:46.073276Z 01O   "previous_tag": "1.0.0-r1",
+2026-09-03T03:06:46.073276Z 01O   "published": true,
+2026-09-03T03:06:46.073277Z 01O   "would_publish": true
+2026-09-03T03:06:46.073277Z 01O }
+2026-09-03T03:06:46.073466Z 01O 
+2026-09-03T03:06:46.073466Z 01O --- T4 stdout:
+2026-09-03T03:06:46.074272Z 01O build-image: building 172.17.0.3:5000/factory-test/t1/tinyimg:1.0.1-r2
+2026-09-03T03:06:46.074273Z 01O build-image: identity hash 35960cf0bd4289031e272615ebc8fd1aa03777f2369a91880973dff55e07cc00 (previous: b36f90d806ff068ee102f255b81f344a85ac7ee1767c52ce4ce4cfa1e9090a46)
+2026-09-03T03:06:46.074274Z 01O build-image: pushing 172.17.0.3:5000/factory-test/t1/tinyimg:1.0.1-r2
+2026-09-03T03:06:46.137664Z 01O PASS T5 missing/malformed image.yml fails with clear error, no trace
+2026-09-03T03:06:46.222704Z 01O PASS T6 unreachable registry is fatal, not treated as tag-absent
+2026-09-03T03:06:46.222733Z 01O 
+2026-09-03T03:06:46.222733Z 01O TESTS FAILED
+2026-09-03T03:06:46.579339Z 00O section_end:1788404806:step_script[0K
+2026-09-03T03:06:46.580115Z 00O+section_start:1788404806:cleanup_file_variables[0K
+2026-09-03T03:06:46.580121Z 00O+[0K[36;1mCleaning up project directory and file based variables[0;m[0;m
+2026-09-03T03:06:47.232522Z 00O section_end:1788404807:cleanup_file_variables[0K
+2026-09-03T03:06:47.664176Z 00O [31;1mERROR: Job failed: exit code 1[0;m
