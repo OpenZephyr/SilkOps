@@ -57,9 +57,10 @@ not an inline call.
 6. On `void-nance`, enable Settings -> Merge requests -> "Pipelines must succeed" so the
    `fixtures` job blocks the merge button (GitLab has no per-job required check; see fact
    `fixture-gate-red-is-advisory-without-project-setting`).
-7. On `void-nance`, create `NASDAQ_DATA_LINK_API_KEY` under Settings -> CI/CD -> Variables as a
-   masked AND protected variable; the key is never written into `.gitlab-ci.yml` (see fact
-   `pit-credential-withheld-on-unprotected-ref`).
+7. On `void-nance`, create `SHARADAR_API_KEY` (from https://sharadar.com/account) under Settings ->
+   CI/CD -> Variables as a masked AND protected variable; the key is never written into
+   `.gitlab-ci.yml` (see fact `pit-credential-withheld-on-unprotected-ref`). Add `SHARADAR_PLAN=paid`
+   only once a paid plan is bought (see fact `sharadar-free-plan-or-unrecognised-key`).
 
 ## Watching a pipeline: what the states mean
 
@@ -82,7 +83,9 @@ Add a fact in `facts/environment.json`; then run `ops/render-runbook.py`.
 
 | Fact | Class | Retry safe | Bites at | Recorded in |
 |---|---|---|---|---|
-| `ndl-account-temporarily-disabled` | permanent | no | pit-integration (PointInTimeAdapter._request) | `void-nance src/falsifier/data/pointintime.py:444` |
+| `sharadar-key-sent-to-nasdaq-data-link` | permanent | no | pit-integration (PointInTimeAdapter._request) | `void-nance docs/research/point-in-time-provider-assessment.md amendment 2026-09-10` |
+| `sharadar-free-plan-or-unrecognised-key` | permanent | no | pit-integration (PointInTimeAdapter plan probe) | `void-nance src/falsifier/data/pointintime.py:655` |
+| `sharadar-rate-limited` | transient | yes | pit-integration (PointInTimeAdapter._request) | `void-nance src/falsifier/data/pointintime.py _http_error 429 branch` |
 | `dind-service-dns` | permanent | no | factory-tests (dind daemon reaching the registry service) | `.gitlab-ci.yml:41-46` |
 | `docker-hub-502` | transient | yes | scan-image (scanner image pull from Docker Hub) | `scripts/ci/scan-image.sh:48-56` |
 | `grep-q-sigpipe-under-pipefail` | permanent | no | factory-tests (T4 tag check after push) | `tests/test-build-image.sh:159-160` |
@@ -96,14 +99,26 @@ Add a fact in `facts/environment.json`; then run `ops/render-runbook.py`.
 | `registry-listing-lag` | transient | yes | factory-tests (tag check immediately after push) | `tests/test-build-image.sh:159-162` |
 | `misfiring-cron-every-minute` | permanent | no | schedule (pipeline_schedules cron) | `tests/fixtures/api/schedule-misfiring.json` |
 | `job-token-fetch-denied` | permanent | no | build-harness (release-asset fetch before docker build) or any consumer pull | `tasks/image-factory/.image-factory.yml:129` |
-| `pit-credential-withheld-on-unprotected-ref` | permanent | no | pit-integration (PointInTimeAdapter construction) | `void-nance src/falsifier/data/pointintime.py:244-247` |
+| `pit-credential-withheld-on-unprotected-ref` | permanent | no | pit-integration (PointInTimeAdapter construction) | `void-nance src/falsifier/data/pointintime.py:431` |
 | `fixture-gate-red-is-advisory-without-project-setting` | permanent | no | fixtures (fixture acceptance suite) | `void-nance .gitlab-ci.yml fixtures job` |
 
-### `ndl-account-temporarily-disabled`
+### `sharadar-key-sent-to-nasdaq-data-link`
 
-void-nance: Nasdaq Data Link answered HTTP 429 with quandl_error QELx06 -- the API account itself is temporarily disabled for exceeding the speed limit, so every Sharadar table answers 429 regardless of request size (seen live on the first pit-integration run on main, pipeline 2837688162). Not a per-request throttle and not something the adapter's RateLimiter can wait out: retrying burns more of the budget that caused the lockout. Wait for the lockout to lift (or ask clientsuccess@nasdaq.com), check what else is using the key, then re-run. QELx04 (speed limit only) is the transient sibling; QELx06 is not.
+void-nance: HTTP 429 with quandl_error QELx06 ("account temporarily disabled") from data.nasdaq.com is what Nasdaq Data Link answers to a key it never issued. Sharadar left Nasdaq Data Link and serves data directly from https://api.sharadar.com/v1.0; a sharadar.com key must never be sent to data.nasdaq.com (Sharadar's own guide says so). Seen live on the first pit-integration run (pipeline 2837688162) before the adapter was ported. This signature today means an old adapter or base URL is in use; fix the code, do not retry and do not contact Nasdaq.
 
 Signature: `Nasdaq Data Link returned HTTP 429|QELx06|your account has temporarily been disabled`
+
+### `sharadar-free-plan-or-unrecognised-key`
+
+void-nance: api.sharadar.com serves an unrecognised key the free sample with HTTP 200 (no 401), and answers anything outside the sample (delisted names, deep history, sp500 added/removed events, the `daily` table on a Prices plan) with 403 {"error":"Exceeds free tier"}. The adapter probes a delisted name before its first data request and refuses with ProviderError code free_tier, so a free plan and a wrong key look the same and neither can produce confirmed data (KTD9). In pit-integration the paid tests skip on this unless the CI variable SHARADAR_PLAN=paid is set, which turns the skip into a failure; set it when the subscription is bought (Bundle Full History for market-cap tiers, or Prices Full History for S&P 500 only). Permanent: retrying changes nothing; check the key and the plan at https://sharadar.com/account.
+
+Signature: `SHARADAR_API_KEY is on the free plan or is unrecognised|Exceeds free tier`
+
+### `sharadar-rate-limited`
+
+void-nance: api.sharadar.com publishes its budget in x-ratelimit-limit/remaining/reset headers (5000 per window observed) and expects one request at a time per key; the adapter serialises requests behind a lock and a local 5-calls/second limiter, so a 429 in CI means the key is shared with something else or the job was parallelised. pit-integration runs on a single worker (no xdist) for that reason. Transient: safe to retry after the reset time named in the error message, once.
+
+Signature: `Sharadar returned HTTP 429|code=rate_limited`
 
 ### `dind-service-dns`
 
@@ -185,9 +200,9 @@ Signature: `curl: \(22\) The requested URL returned error: 40[34]`
 
 ### `pit-credential-withheld-on-unprotected-ref`
 
-void-nance: the Sharadar credential NASDAQ_DATA_LINK_API_KEY is never written into .gitlab-ci.yml. It must be created under Settings -> CI/CD -> Variables as a *masked* AND *protected* variable (plan KTD9), so GitLab withholds it from pipelines on unprotected branches and redacts it from job logs; the `pit-integration` job runs only on protected refs for that reason. This signature on a protected ref means the variable is missing or not marked protected; on an unprotected ref it means the job's `rules:` were loosened. A configuration error, never a flake, and the adapter never falls back to free data.
+void-nance: the Sharadar credential SHARADAR_API_KEY (issued at https://sharadar.com/account) is never written into .gitlab-ci.yml. It must be created under Settings -> CI/CD -> Variables as a *masked* AND *protected* variable (plan KTD9), so GitLab withholds it from pipelines on unprotected branches and redacts it from job logs; the `pit-integration` job runs only on protected refs for that reason. This signature on a protected ref means the variable is missing or not marked protected; on an unprotected ref it means the job's `rules:` were loosened. A configuration error, never a flake, and the adapter never falls back to free data.
 
-Signature: `NASDAQ_DATA_LINK_API_KEY is not set: the point-in-time adapter`
+Signature: `SHARADAR_API_KEY is not set: the point-in-time adapter`
 
 ### `fixture-gate-red-is-advisory-without-project-setting`
 
