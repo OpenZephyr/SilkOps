@@ -54,6 +54,12 @@ not an inline call.
    times an hour; `schedule.sh validate` refuses that shape).
 5. On the `silkops-harness` project, allow-list `ci-cd` under job token permissions so the
    factory can fetch the release asset.
+6. On `void-nance`, enable Settings -> Merge requests -> "Pipelines must succeed" so the
+   `fixtures` job blocks the merge button (GitLab has no per-job required check; see fact
+   `fixture-gate-red-is-advisory-without-project-setting`).
+7. On `void-nance`, create `NASDAQ_DATA_LINK_API_KEY` under Settings -> CI/CD -> Variables as a
+   masked AND protected variable; the key is never written into `.gitlab-ci.yml` (see fact
+   `pit-credential-withheld-on-unprotected-ref`).
 
 ## Watching a pipeline: what the states mean
 
@@ -76,6 +82,7 @@ Add a fact in `facts/environment.json`; then run `ops/render-runbook.py`.
 
 | Fact | Class | Retry safe | Bites at | Recorded in |
 |---|---|---|---|---|
+| `ndl-account-temporarily-disabled` | permanent | no | pit-integration (PointInTimeAdapter._request) | `void-nance src/falsifier/data/pointintime.py:444` |
 | `dind-service-dns` | permanent | no | factory-tests (dind daemon reaching the registry service) | `.gitlab-ci.yml:41-46` |
 | `docker-hub-502` | transient | yes | scan-image (scanner image pull from Docker Hub) | `scripts/ci/scan-image.sh:48-56` |
 | `grep-q-sigpipe-under-pipefail` | permanent | no | factory-tests (T4 tag check after push) | `tests/test-build-image.sh:159-160` |
@@ -89,6 +96,14 @@ Add a fact in `facts/environment.json`; then run `ops/render-runbook.py`.
 | `registry-listing-lag` | transient | yes | factory-tests (tag check immediately after push) | `tests/test-build-image.sh:159-162` |
 | `misfiring-cron-every-minute` | permanent | no | schedule (pipeline_schedules cron) | `tests/fixtures/api/schedule-misfiring.json` |
 | `job-token-fetch-denied` | permanent | no | build-harness (release-asset fetch before docker build) or any consumer pull | `tasks/image-factory/.image-factory.yml:129` |
+| `pit-credential-withheld-on-unprotected-ref` | permanent | no | pit-integration (PointInTimeAdapter construction) | `void-nance src/falsifier/data/pointintime.py:244-247` |
+| `fixture-gate-red-is-advisory-without-project-setting` | permanent | no | fixtures (fixture acceptance suite) | `void-nance .gitlab-ci.yml fixtures job` |
+
+### `ndl-account-temporarily-disabled`
+
+void-nance: Nasdaq Data Link answered HTTP 429 with quandl_error QELx06 -- the API account itself is temporarily disabled for exceeding the speed limit, so every Sharadar table answers 429 regardless of request size (seen live on the first pit-integration run on main, pipeline 2837688162). Not a per-request throttle and not something the adapter's RateLimiter can wait out: retrying burns more of the budget that caused the lockout. Wait for the lockout to lift (or ask clientsuccess@nasdaq.com), check what else is using the key, then re-run. QELx04 (speed limit only) is the transient sibling; QELx06 is not.
+
+Signature: `Nasdaq Data Link returned HTTP 429|QELx06|your account has temporarily been disabled`
 
 ### `dind-service-dns`
 
@@ -167,5 +182,17 @@ Signature: `^\* \d{1,2} \* \* \*$|cron[^\n]*\* 22 \* \* \*`
 A cross-project fetch with CI_JOB_TOKEN (package registry asset, repository archive, registry pull) answered 404/403: the target project has not allow-listed this project under Settings > CI/CD > Job token permissions. GitLab hides the resource rather than naming the denial, so a missing allow-list looks like a missing file. A configuration pre-step, not a flake: allow-list the fetching project on the TARGET project (Maintainer there), then re-run.
 
 Signature: `curl: \(22\) The requested URL returned error: 40[34]`
+
+### `pit-credential-withheld-on-unprotected-ref`
+
+void-nance: the Sharadar credential NASDAQ_DATA_LINK_API_KEY is never written into .gitlab-ci.yml. It must be created under Settings -> CI/CD -> Variables as a *masked* AND *protected* variable (plan KTD9), so GitLab withholds it from pipelines on unprotected branches and redacts it from job logs; the `pit-integration` job runs only on protected refs for that reason. This signature on a protected ref means the variable is missing or not marked protected; on an unprotected ref it means the job's `rules:` were loosened. A configuration error, never a flake, and the adapter never falls back to free data.
+
+Signature: `NASDAQ_DATA_LINK_API_KEY is not set: the point-in-time adapter`
+
+### `fixture-gate-red-is-advisory-without-project-setting`
+
+void-nance: the `fixtures` job (U8, R19/R22) never carries `allow_failure`, but GitLab has no per-job required check -- merge blocking is a PROJECT SETTING. The operator must enable Settings -> Merge requests -> "Pipelines must succeed"; until that is on, a red fixture suite is advisory and the merge button stays green. A fixture failure itself is deterministic (offline snapshot, pinned python:3.9 + requirements-ci.txt): a moved tolerance band or a snapshot refresh must land in the same MR as CHECKSUMS.sha256 / MANIFEST.json. Retrying changes nothing.
+
+Signature: `FAILED tests/test_fixture_\S+`
 
 <!-- facts:end -->

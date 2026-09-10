@@ -3,6 +3,15 @@
  "description": "Recorded environment facts (KTD7). Each `pattern` is a Python regex applied to every cleaned trace line (\\r and ANSI stripped); classify-failure.py takes the first matching fact in file order, so specific signatures come first. `source` points at the ci-cd file:line the wording is lifted from. `retry_safe` is the fact's own verdict; the `silkops: no-retry-after=` declaration can still veto it.",
  "facts": [
   {
+   "id": "ndl-account-temporarily-disabled",
+   "pattern": "Nasdaq Data Link returned HTTP 429|QELx06|your account has temporarily been disabled",
+   "explanation": "void-nance: Nasdaq Data Link answered HTTP 429 with quandl_error QELx06 -- the API account itself is temporarily disabled for exceeding the speed limit, so every Sharadar table answers 429 regardless of request size (seen live on the first pit-integration run on main, pipeline 2837688162). Not a per-request throttle and not something the adapter's RateLimiter can wait out: retrying burns more of the budget that caused the lockout. Wait for the lockout to lift (or ask clientsuccess@nasdaq.com), check what else is using the key, then re-run. QELx04 (speed limit only) is the transient sibling; QELx06 is not.",
+   "class": "permanent",
+   "retry_safe": false,
+   "step": "pit-integration (PointInTimeAdapter._request)",
+   "source": "void-nance src/falsifier/data/pointintime.py:444"
+  },
+  {
    "id": "dind-service-dns",
    "pattern": "dial tcp: lookup \\S+ on 169\\.254\\.169\\.254:53: no such host",
    "explanation": "SaaS runners: services cannot resolve each other, so the dind daemon cannot look up the `registry` service on the SaaS resolver (169.254.169.254:53). A configuration error, not a flake: the guard suite runs its throwaway registry ON the dind daemon (host network) and pushes to the daemon's own IP over plain HTTP, with --insecure-registry for the private ranges.",
@@ -32,7 +41,7 @@
   {
    "id": "pull-access-denied",
    "pattern": "pull access denied.*requested access to the resource is denied",
-   "explanation": "The factory registry inherits the project's private visibility: a consumer's job pulls a factory image only if ci-cd lists that project \u2014 or its group \u2014 under Settings \u2192 CI/CD \u2192 Job token permissions (Authorized groups and projects). The failure is fast and unambiguous, within seconds of job start. Allow-list the group once rather than each consumer; retrying changes nothing.",
+   "explanation": "The factory registry inherits the project's private visibility: a consumer's job pulls a factory image only if ci-cd lists that project — or its group — under Settings → CI/CD → Job token permissions (Authorized groups and projects). The failure is fast and unambiguous, within seconds of job start. Allow-list the group once rather than each consumer; retrying changes nothing.",
    "class": "permanent",
    "retry_safe": false,
    "step": "image pull at consumer job start (job-token allow-list)",
@@ -41,7 +50,7 @@
   {
    "id": "manifest-inspect-network-error",
    "pattern": "registry query for \\S+ failed \\(cannot verify tag absence\\)",
-   "explanation": "`docker manifest inspect` exits 1 both for \"no such tag\" and for real errors; only a stderr message proving the tag is absent (no such manifest / manifest unknown / MANIFEST_UNKNOWN / NAME_UNKNOWN) may fall through \u2014 a network or auth failure is never read as \"tag absent\" (KTD2). The probe runs before any build or push, so a retry is safe.",
+   "explanation": "`docker manifest inspect` exits 1 both for \"no such tag\" and for real errors; only a stderr message proving the tag is absent (no such manifest / manifest unknown / MANIFEST_UNKNOWN / NAME_UNKNOWN) may fall through — a network or auth failure is never read as \"tag absent\" (KTD2). The probe runs before any build or push, so a retry is safe.",
    "class": "transient",
    "retry_safe": true,
    "step": "build-image (tag existence probe)",
@@ -104,7 +113,7 @@
   {
    "id": "misfiring-cron-every-minute",
    "pattern": "^\\* \\d{1,2} \\* \\* \\*$|cron[^\\n]*\\* 22 \\* \\* \\*",
-   "explanation": "`* 22 * * *` fires every minute of hour 22 (sixty pipelines) instead of once \u2014 `0 22 * * *` is the daily form. The silkops-factory-records schedule shipped with the misfiring cron and produced hundreds of failed main pipelines every ~25s during 22:xx local. schedule.sh refuses a cron firing more than once per day unless --allow-frequent.",
+   "explanation": "`* 22 * * *` fires every minute of hour 22 (sixty pipelines) instead of once — `0 22 * * *` is the daily form. The silkops-factory-records schedule shipped with the misfiring cron and produced hundreds of failed main pipelines every ~25s during 22:xx local. schedule.sh refuses a cron firing more than once per day unless --allow-frequent.",
    "class": "permanent",
    "retry_safe": false,
    "step": "schedule (pipeline_schedules cron)",
@@ -118,6 +127,24 @@
    "retry_safe": false,
    "step": "build-harness (release-asset fetch before docker build) or any consumer pull",
    "source": "tasks/image-factory/.image-factory.yml:129"
+  },
+  {
+   "id": "pit-credential-withheld-on-unprotected-ref",
+   "pattern": "NASDAQ_DATA_LINK_API_KEY is not set: the point-in-time adapter",
+   "explanation": "void-nance: the Sharadar credential NASDAQ_DATA_LINK_API_KEY is never written into .gitlab-ci.yml. It must be created under Settings -> CI/CD -> Variables as a *masked* AND *protected* variable (plan KTD9), so GitLab withholds it from pipelines on unprotected branches and redacts it from job logs; the `pit-integration` job runs only on protected refs for that reason. This signature on a protected ref means the variable is missing or not marked protected; on an unprotected ref it means the job's `rules:` were loosened. A configuration error, never a flake, and the adapter never falls back to free data.",
+   "class": "permanent",
+   "retry_safe": false,
+   "step": "pit-integration (PointInTimeAdapter construction)",
+   "source": "void-nance src/falsifier/data/pointintime.py:244-247"
+  },
+  {
+   "id": "fixture-gate-red-is-advisory-without-project-setting",
+   "pattern": "FAILED tests/test_fixture_\\S+",
+   "explanation": "void-nance: the `fixtures` job (U8, R19/R22) never carries `allow_failure`, but GitLab has no per-job required check -- merge blocking is a PROJECT SETTING. The operator must enable Settings -> Merge requests -> \"Pipelines must succeed\"; until that is on, a red fixture suite is advisory and the merge button stays green. A fixture failure itself is deterministic (offline snapshot, pinned python:3.9 + requirements-ci.txt): a moved tolerance band or a snapshot refresh must land in the same MR as CHECKSUMS.sha256 / MANIFEST.json. Retrying changes nothing.",
+   "class": "permanent",
+   "retry_safe": false,
+   "step": "fixtures (fixture acceptance suite)",
+   "source": "void-nance .gitlab-ci.yml fixtures job"
   }
  ]
 }
