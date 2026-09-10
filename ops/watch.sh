@@ -14,7 +14,8 @@
 # superseded (the MR's head pipeline moved on), jobs, status transitions, errors (a jobs
 # listing that failed on some poll: the previous snapshot is kept, never "zero jobs"; on the
 # first poll it is fatal, exit 1 jobs_fetch_failed), and for a failed pipeline the per-job
-# triage: `trace.py root-cause` lines + `classify-failure.py` verdict, every trace line
+# triage: `trace.py root-cause` lines + `classify-failure.py` verdict, the job's `web_url` and
+# `first_failure` (the first pytest `FAILED ` line, else null), every trace line
 # passed through `redact`.
 #   --retry  POST jobs/:id/retry once per job per watch, only when the failure is
 #            transient AND retry_safe AND the job has not been retried before
@@ -24,9 +25,12 @@
 #            else merge_requests?source_branch=<ref>&state=opened); without MR context the retry
 #            is refused (retry_skipped, no_mr_context) — the report is still produced.
 #   --note   (with --mr) posts a marker-tagged triage note per failed job via note.sh,
-#            deduplicated by `triage-<pipeline id>-<job name>`. Root-cause lines sit in a
-#            fence longer than any backtick run they contain and are indented, so a trace
-#            line can neither close the fence nor read as a GitLab quick action.
+#            deduplicated by `triage-<pipeline id>-<job name>`. The header carries the job URL,
+#            the step (the fact's, else the job name) and, for a pytest job, the first `FAILED `
+#            line. Root-cause lines sit in a fence longer than any backtick run they contain and
+#            are indented, and the first-failure line sits in an inline code span longer than any
+#            backtick run inside it, so a trace line can neither close the fence nor read as a
+#            GitLab quick action.
 # The wait budget is counted in poll intervals (poll at 0, interval, 2*interval, …
 # while the next poll still fits), so a run is deterministic; SILKOPS_WATCH_SLEEP
 # overrides the seconds actually slept between polls (tests set 0).
@@ -213,25 +217,34 @@ resolve_mr_from_pipeline() {
 # triage_job <job-json> — fetch the trace, root-cause + classify, redact; appends to
 # TRIAGE and FAILED_ROUND.
 triage_job() {
-  local job="$1" name id fr tf rc cl lines exit_code
+  local job="$1" name id fr wu tf rc cl lines exit_code ff
   name="$(printf '%s' "$job" | jq -r .name)"; id="$(printf '%s' "$job" | jq -r .id)"
   fr="$(printf '%s' "$job" | jq -c '.failure_reason // null')"
+  wu="$(printf '%s' "$job" | jq -c '.web_url // null')"
   tf="$TMP/trace-$id.log"
   if glab_ro api -X GET "projects/$ENC/jobs/$id/trace" >"$tf" 2>"$TMP/trace-$id.err"; then
     rc="$(python3 "$OPS/trace.py" root-cause "$tf" --lines "$ROOT_LINES")" || rc='{"lines":[],"exit_code":null}'
     lines="$(printf '%s' "$rc" | jq -r '.lines[]' | redact | jq -Rc . | jq -sc .)"
     exit_code="$(printf '%s' "$rc" | jq -c '.exit_code // null')"
+    # first_failure: pytest's `short test summary info` one-liner. Untrusted job output, so
+    # it takes the same redaction as every root-cause line before it is returned or posted.
+    if printf '%s' "$rc" | jq -e '.first_failure != null' >/dev/null; then
+      ff="$(printf '%s' "$rc" | jq -r '.first_failure' | redact | jq -Rsc 'rtrimstr("\n")')"
+    else
+      ff=null
+    fi
     cl="$(python3 "$OPS/classify-failure.py" "$tf" 2>/dev/null | redact \
       | jq -c '{transient, retry_safe, fact, class, reason, step, no_retry_after, marker_hit_before_failure, marker_line_no, failure_line_no, hit_count: (.hits | length), facts_file: (.facts_file | split("/") | last)}')" \
       || cl='{"transient":false,"retry_safe":false,"fact":null,"class":"unknown","reason":"classify-failure.py failed on the trace"}'
   else
     err "trace of job $id ($name) could not be fetched: $(redact <"$TMP/trace-$id.err" | tr '\n' ' ')"
-    lines='[]'; exit_code=null
+    lines='[]'; exit_code=null; ff=null
     cl='{"transient":false,"retry_safe":false,"fact":null,"class":"unknown","reason":"trace unavailable; an unknown failure is never retried automatically"}'
   fi
   local entry
   entry="$(jq -cn --arg n "$name" --argjson id "$id" --argjson fr "$fr" --argjson cl "$cl" --argjson rc "$lines" --argjson ec "$exit_code" --argjson pid "$PIPE_ID" \
-    '{name: $n, id: $id, pipeline_id: $pid, failure_reason: $fr, exit_code: $ec, classification: $cl, root_cause: $rc}')"
+    --argjson wu "$wu" --argjson ff "$ff" \
+    '{name: $n, id: $id, pipeline_id: $pid, web_url: $wu, failure_reason: $fr, exit_code: $ec, first_failure: $ff, classification: $cl, root_cause: $rc}')"
   append TRIAGE "$entry"
   append FAILED_ROUND "$entry"
 }
@@ -283,11 +296,23 @@ post_note() {
   bf="$TMP/note-$id.md"
   {
     printf '### silkOps triage — pipeline %s, job %s (#%s)\n\n' "$PIPE_ID" "$name" "$id"
-    printf '%s' "$e" | jq -r '"- classification: \(.classification.fact // "unknown") · class=\(.classification.class) · transient=\(.classification.transient) · retry_safe=\(.classification.retry_safe)",
+    printf '%s' "$e" | jq -r '"- job: \(.web_url // "n/a")",
+      "- classification: \(.classification.fact // "unknown") · class=\(.classification.class) · transient=\(.classification.transient) · retry_safe=\(.classification.retry_safe)",
       "- reason: \(.classification.reason)",
-      "- step: \(.classification.step // "n/a")",
+      "- step: \(.classification.step // .name)",
       "- failure_reason: \(.failure_reason // "n/a") · exit code: \(.exit_code // "n/a")"'
-    printf -- '- retry decision: %s\n\n' "$decision"
+    printf -- '- retry decision: %s\n' "$decision"
+    # first failure (pytest short summary): untrusted, and it renders outside the fence, so it
+    # is wrapped in an inline code span whose backtick run is longer than any inside it — a
+    # backtick or a leading `/` in the trace line can neither escape the span nor read as a
+    # quick action (the bullet prefix already keeps it off column 0).
+    if jq -en --argjson e "$e" '$e.first_failure != null' >/dev/null; then
+      printf '%s' "$e" | jq -r '.first_failure as $f
+        | ([$f | match("`+"; "g").string | length] | max // 0 | . + 1) as $n
+        | ("`" * $n) as $t
+        | "- first failure: " + $t + " " + $f + " " + $t'
+    fi
+    printf '\n'
     # The trace is untrusted: the fence is one backtick longer than any run inside it (a ``` line
     # cannot close it) and every line is indented, so none starts with `/` (a quick action).
     fence="$(printf '%s' "$e" | jq -r '[.root_cause[] | [match("`+"; "g").string | length] | max // 0] | max // 0 | (. + 1) | if . < 3 then 3 else . end | "`" * .')"

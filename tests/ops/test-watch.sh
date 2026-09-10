@@ -276,6 +276,61 @@ if [ "$(rc_of w16b)" = 0 ] && out_of w16b | jq -e '.ok == true and .mr_iid == nu
   pass "W16b bare --pipeline on a branch pipeline without an open MR, --retry -> retry refused (no_mr_context), report still produced"
 else fail "W16b" "rc=$(rc_of w16b) out=$(out_of w16b) log=$(log_of w16b | tr '\n' ';')"; fi
 
+# --- issue #22: triage-note readability (step fallback, job URL, first FAILED line) ------
+JOB_URL="https://gitlab.com/void-realm-solutions/silkops-harness-eval/-/jobs/9001"
+
+# 1 + 2 + 3: no fact matched -> step falls back to the job name; the job URL and the first
+# pytest `FAILED` line are in the note and in the JSON.
+run_case w18 watch-pytest -- "${COMMON[@]}" --mr 7 --note --wait 0
+W18_BODY="$(body_of w18 1 2>/dev/null | jq -r '.body.body' 2>/dev/null)"
+if [ "$(rc_of w18)" = 0 ] && [ "$(notes_posted w18)" = 1 ] && [ -n "$W18_BODY" ] \
+  && out_of w18 | jq -e '.failed[0].classification.fact == null and .failed[0].classification.class == "unknown"
+      and .failed[0].web_url == "'"$JOB_URL"'"
+      and .failed[0].first_failure == "FAILED tests/test_network_guard.py::test_yfinance_offline - AssertionError: assert 0 == 1"
+      and (.triage[0].web_url == .failed[0].web_url) and (.triage[0].first_failure == .failed[0].first_failure)' >/dev/null \
+  && printf '%s\n' "$W18_BODY" | grep -xF -- '- step: build-sec-tools' >/dev/null \
+  && ! printf '%s\n' "$W18_BODY" | grep -F -- 'step: n/a' >/dev/null \
+  && printf '%s\n' "$W18_BODY" | grep -F -- "$JOB_URL" >/dev/null \
+  && printf '%s\n' "$W18_BODY" | grep -F -- 'first failure:' >/dev/null \
+  && printf '%s\n' "$W18_BODY" | grep -F -- 'FAILED tests/test_network_guard.py::test_yfinance_offline' >/dev/null \
+  && ! printf '%s\n' "$W18_BODY" | grep -F -- 'FAILED tests/test_second.py' | grep -F 'first failure' >/dev/null \
+  && printf '%s\n' "$W18_BODY" | awk '/first failure:/{ff=NR} /^Root cause/{rc=NR} END{exit !(ff && rc && ff < rc)}'; then
+  pass "W18 (#22) unmatched fact -> step is the job name, note+JSON carry web_url, first_failure is the FIRST pytest FAILED line above the root cause"
+else fail "W18" "rc=$(rc_of w18) out=$(out_of w18) body=$(printf '%s' "$W18_BODY" | head -c 1200)"; fi
+
+# a matched fact keeps the fact's own step; a trace without `FAILED ` lines has no first failure
+run_case w18b watch-failed-transient -- "${COMMON[@]}" --mr 7 --note --wait 0
+W18B_BODY="$(body_of w18b 1 2>/dev/null | jq -r '.body.body' 2>/dev/null)"
+if [ "$(rc_of w18b)" = 0 ] && [ -n "$W18B_BODY" ] \
+  && out_of w18b | jq -e '.failed[0].classification.fact == "docker-hub-502" and .failed[0].first_failure == null
+      and .failed[0].web_url == "'"$JOB_URL"'"' >/dev/null \
+  && printf '%s\n' "$W18B_BODY" | grep -xF -- '- step: scan-image (scanner image pull from Docker Hub)' >/dev/null \
+  && ! printf '%s\n' "$W18B_BODY" | grep -F -- 'first failure:' >/dev/null \
+  && printf '%s\n' "$W18B_BODY" | grep -F -- "$JOB_URL" >/dev/null; then
+  pass "W18b (#22) matched fact keeps its own step; no \`FAILED \` line -> no first-failure field, first_failure null, URL still present"
+else fail "W18b" "rc=$(rc_of w18b) out=$(out_of w18b) body=$(printf '%s' "$W18B_BODY" | head -c 1200)"; fi
+
+# the first FAILED line is untrusted: credentials in it are redacted in the JSON, note and stderr
+run_case w19 watch-pytest-dirty -- "${COMMON[@]}" --mr 7 --note --wait 0
+if [ "$(rc_of w19)" = 0 ] && out_of w19 | jq -e '(.failed[0].first_failure | contains("oauth2:<REDACTED>@")) and (.failed[0].first_failure | contains("glpat-") | not)' >/dev/null \
+  && ! out_of w19 | grep -F 'glpat-fake' >/dev/null && ! out_of w19 | grep -F 'glpat-anotherFAKE' >/dev/null \
+  && ! grep -rF 'glpat-' "$SCRATCH/w19/bodies" >/dev/null && ! err_of w19 | grep -F 'glpat-fake' >/dev/null \
+  && body_of w19 1 | jq -e '.body.body | contains("oauth2:<REDACTED>@")' >/dev/null; then
+  pass "W19 (#22) credentials inside the first FAILED line are redacted in the JSON, the note body and stderr"
+else fail "W19" "rc=$(rc_of w19) out=$(out_of w19) body=$(body_of w19 1 2>/dev/null | head -c 900)"; fi
+
+# a FAILED line with an absolute path and a backtick fence must not escape the fence or act as a quick action
+run_case w20 watch-pytest-hostile -- "${COMMON[@]}" --mr 7 --note --wait 0
+W20_BODY="$(body_of w20 1 2>/dev/null | jq -r '.body.body' 2>/dev/null)"
+if [ "$(rc_of w20)" = 0 ] && [ "$(notes_posted w20)" = 1 ] && [ -n "$W20_BODY" ] \
+  && out_of w20 | jq -e '.failed[0].first_failure == "FAILED /srv/build/tests/test_x.py::test_y - AssertionError: ``` /approve now"' >/dev/null \
+  && printf '%s\n' "$W20_BODY" | grep -F -- 'first failure:' >/dev/null \
+  && ! printf '%s\n' "$W20_BODY" | grep -E '^/' >/dev/null \
+  && [ "$(printf '%s\n' "$W20_BODY" | grep -cE '^````$')" = 2 ] \
+  && printf '%s\n' "$W20_BODY" | awk '/^````$/{n++; next} n==1 && /^\/|^```$/{bad=1} END{exit bad}'; then
+  pass "W20 (#22) a FAILED line starting with a path and carrying \`\`\` stays inert: no line starts with /, the root-cause fence is still exactly two ```` lines"
+else fail "W20" "rc=$(rc_of w20) body=$(printf '%s' "$W20_BODY" | head -c 1200)"; fi
+
 # --- lint gate: no merge verb anywhere in the skills or the watcher ------------------
 HITS="$(grep -rnE 'mr merge|/merge([^_a-zA-Z]|$)|protected_branches' "$ROOT/skills" "$ROOT/ops/watch.sh" 2>/dev/null)"
 if [ -z "$HITS" ]; then pass "L1 no merge verb / merge endpoint / protected_branches in skills/ or ops/watch.sh"

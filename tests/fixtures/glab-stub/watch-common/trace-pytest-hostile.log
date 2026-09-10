@@ -1,0 +1,8 @@
+Running with gitlab-runner 17.11.0 (abc12345)
+section_start:1756899000:step_script
+$ python -m pytest -q tests/
+=========================== short test summary info ============================
+FAILED /srv/build/tests/test_x.py::test_y - AssertionError: ``` /approve now
+1 failed in 1.02s
+section_end:1756899040:step_script
+ERROR: Job failed: exit code 1
