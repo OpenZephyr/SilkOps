@@ -205,6 +205,25 @@ class RootCause(unittest.TestCase):
         self.assertIsNone(out["exit_code"])
         self.assertIsNone(out["failure_line"])
 
+    def test_first_failure_is_the_first_pytest_summary_line(self):
+        """issue #22: `first_failure` is the FIRST `^FAILED ` line, timestamp prefix and ANSI
+        stripped; a trace without one has it null."""
+        with tempfile.NamedTemporaryFile("w", suffix=".log", delete=False) as f:
+            f.write("2026-09-10T10:00:00.000000Z 00O $ python -m pytest -q\n"
+                    "2026-09-10T10:00:01.000000Z 00O \x1b[31mFAILED tests/a.py::test_one - AssertionError: 0 == 1\x1b[0m\n"
+                    "2026-09-10T10:00:02.000000Z 00O FAILED tests/b.py::test_two - ValueError: boom\n"
+                    "2026-09-10T10:00:03.000000Z 00O ERROR: Job failed: exit code 1\n")
+            path = f.name
+        try:
+            rc, out, _ = run("trace.py", "root-cause", path)
+            self.assertEqual(rc, 0)
+            self.assertEqual(out["first_failure"],
+                             "FAILED tests/a.py::test_one - AssertionError: 0 == 1")
+        finally:
+            os.unlink(path)
+        _rc, green, _e = run("trace.py", "root-cause", trace("docker-hub-502.log"))
+        self.assertIsNone(green["first_failure"])
+
     def test_declaration_line_surfaced(self):
         rc, out, _ = run("trace.py", "root-cause", trace("publish-502-after-push.log"))
         self.assertEqual(rc, 0)

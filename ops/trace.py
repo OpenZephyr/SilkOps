@@ -10,7 +10,9 @@ Subcommands
   timing <trace|-> [--top N]   steps and sections ranked by duration (0 = all)
   root-cause <trace|-> [--lines N]
                                the last N meaningful lines before `ERROR: Job failed`
-                               plus pattern hits and the job's `silkops: no-retry-after=` line
+                               plus pattern hits, the job's `silkops: no-retry-after=` line
+                               and `first_failure`, the first `FAILED ` line (pytest's
+                               short test summary) or null
 
 Trace shape (GitLab SaaS, runner >= 17): every physical line is
   `<ISO-8601 with 6-digit fraction>Z <NN><O|E>[+| ]<content>` — NN = stream, O/E =
@@ -39,6 +41,8 @@ SECTION_RE = re.compile(r"section_(start|end):(\d+):([A-Za-z0-9_.-]+)")
 STEP_RE = re.compile(r"^\$ (.+)$")
 FAIL_RE = re.compile(r"ERROR: Job failed(?:: exit code (\d+))?")
 DECL_RE = re.compile(r"silkops: no-retry-after=(.+?)\s*$")
+# pytest's `short test summary info` one-liner: the single most useful line of a test job.
+PYTEST_FAILED_RE = re.compile(r"^FAILED ")
 ROOT_PATTERNS = ("ERROR:", "error:", "FAIL", "fatal:", "denied", "502",
                  "no such host", "Job failed: exit code")
 NOTABLE_RE = re.compile(
@@ -203,6 +207,13 @@ def root_cause(a, n):
     meaningful = [l["text"] for l in lines[:upto]
                   if l["text"].strip() and not SECTION_RE.search(l["text"])
                   and not (l["stream"] or "01").startswith("00")]
+    # The first `FAILED ` line (pytest's short summary), untrusted job output like every
+    # other trace line: the caller redacts it before it is returned or posted.
+    first_failure = None
+    for l in lines:
+        if PYTEST_FAILED_RE.match(l["text"]):
+            first_failure = l["text"].rstrip()
+            break
     hits, truncated = [], False
     for l in lines:
         for p in ROOT_PATTERNS:
@@ -217,6 +228,7 @@ def root_cause(a, n):
         "failure_line": fail_text,
         "failure_line_no": lines[fail_idx]["no"] if fail_idx is not None else None,
         "lines": meaningful[-n:] if n > 0 else [],
+        "first_failure": first_failure,
         "hits": hits,
         "hits_truncated": truncated,
         "no_retry_after": a["no_retry_after"],
