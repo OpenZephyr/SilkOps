@@ -6,11 +6,19 @@
 #        schedule.sh --project <group/project> create --description <d> --cron "<expr>" --ref <branch>
 #                    [--timezone <tz>] [--allow-frequent] [--dry-run]
 #                    [--var-file K=<path>]... [--var-env K]...
+#        schedule.sh --project <group/project> update --id <schedule id>
+#                    [--cron "<expr>"] [--ref <branch>] [--description <d>] [--timezone <tz>]
+#                    [--active true|false] [--allow-frequent] [--dry-run]
 #
 # A cron that fires more than once per day (any minute or hour field that is not a
 # single fixed number) is refused with exit 7 `cron_too_frequent` unless --allow-frequent.
-# `list` reports owner and next_run_at under the session identity; `create` writes
-# via api_settings (settings token). --dry-run shows current schedules + the proposed one.
+# `list` reports owner and next_run_at under the session identity; `create` and `update`
+# write via api_settings (settings token). --dry-run shows current + proposed and writes nothing.
+# `update` reads the schedule first and aborts (exit 1 `lookup_failed`) on any read failure
+# that is not a 404 — a failed read is never "absent"; a 404 is exit 5 `not_found`. It sends
+# only the fields that actually differ, names them in `changed`, and writes nothing when none
+# do (`action: unchanged`). A schedule owned by another user is flagged (`owner_differs: true`)
+# and updated, not refused: that write needs Maintainer and does not transfer ownership.
 # Schedule variables are CI/CD variables: their values arrive by file (`--var-file K=<path>`,
 # one trailing newline dropped) or environment (`--var-env K` reads SILKOPS_SCHEDULE_VAR_<K>);
 # `--var K=V` is refused (exit 2) because argv lands in shell history and transcripts. The
@@ -23,10 +31,13 @@ set -euo pipefail
 # shellcheck source=lib/glab.sh
 . "$(dirname "$0")/lib/glab.sh"
 
-usage() { fail "$EX_USAGE" usage "usage: schedule.sh --project <group/project> (list | validate --cron <expr> | create --description <d> --cron <expr> --ref <branch> [--timezone <tz>] [--var-file K=<path>]... [--var-env K]...) [--allow-frequent] [--dry-run]${1:+ — $1}"; }
+usage() { fail "$EX_USAGE" usage "usage: schedule.sh --project <group/project> (list | validate --cron <expr> | create --description <d> --cron <expr> --ref <branch> [--timezone <tz>] [--var-file K=<path>]... [--var-env K]... | update --id <schedule id> [--cron <expr>] [--ref <branch>] [--description <d>] [--timezone <tz>] [--active true|false]) [--allow-frequent] [--dry-run]${1:+ — $1}"; }
 
 # VAR_SPECS entries: "file<TAB>K<TAB>path" or "env<TAB>K"; values are never held in argv.
-PROJECT=""; CMD=""; DESC=""; CRON=""; REF=""; TZ_NAME="UTC"; ALLOW=false; DRY=false; VAR_SPECS=()
+# TZ_GIVEN separates "--timezone UTC" from the create-time default, so `update` can tell
+# which fields the operator actually asked to change.
+PROJECT=""; CMD=""; DESC=""; CRON=""; REF=""; TZ_NAME="UTC"; TZ_GIVEN=false; ALLOW=false; DRY=false; VAR_SPECS=()
+SID=""; ACTIVE=""
 var_key_ok() { [[ "$1" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || usage "variable key must match [A-Za-z_][A-Za-z0-9_]* (got: $1)"; }
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -35,20 +46,22 @@ while [ $# -gt 0 ]; do
     --description) [ $# -ge 2 ] || usage; DESC="$2"; shift 2 ;;
     --cron) [ $# -ge 2 ] || usage; CRON="$2"; shift 2 ;;
     --ref) [ $# -ge 2 ] || usage; REF="$2"; shift 2 ;;
-    --timezone) [ $# -ge 2 ] || usage; TZ_NAME="$2"; shift 2 ;;
+    --timezone) [ $# -ge 2 ] || usage; TZ_NAME="$2"; TZ_GIVEN=true; shift 2 ;;
+    --id) [ $# -ge 2 ] || usage; SID="$2"; shift 2 ;;
+    --active) [ $# -ge 2 ] || usage; ACTIVE="$2"; shift 2 ;;
     --var|--var=*) fail "$EX_USAGE" usage "--var is refused: variable values never go on argv (shell history, transcripts). Put the value in a file and pass --var-file K=<path>, or export SILKOPS_SCHEDULE_VAR_<K> and pass --var-env K." ;;
     --var-file) [ $# -ge 2 ] || usage; [[ "$2" == *=* ]] || usage "--var-file needs K=<path>"; var_key_ok "${2%%=*}"; VAR_SPECS+=("file"$'\t'"${2%%=*}"$'\t'"${2#*=}"); shift 2 ;;
     --var-env) [ $# -ge 2 ] || usage; var_key_ok "$2"; VAR_SPECS+=("env"$'\t'"$2"); shift 2 ;;
     --allow-frequent) ALLOW=true; shift ;;
     --dry-run) DRY=true; shift ;;
-    list|create|validate) [ -z "$CMD" ] || usage "one subcommand only"; CMD="$1"; shift ;;
+    list|create|validate|update) [ -z "$CMD" ] || usage "one subcommand only"; CMD="$1"; shift ;;
     -h|--help) usage ;;
     *) usage "unknown argument: $1" ;;
   esac
 done
 require_project "$PROJECT"
-[ -n "$CMD" ] || usage "subcommand required: list | validate | create"
-# list and create read through glab_ro, which needs SILKOPS_CI_TOKEN in CI: check at top level
+[ -n "$CMD" ] || usage "subcommand required: list | validate | create | update"
+# list, create and update read through glab_ro, which needs SILKOPS_CI_TOKEN in CI: check at top level
 # so the exit-3 JSON and message reach the real streams (validate is offline).
 [ "$CMD" = validate ] || require_ci_token
 ENC="$(urlenc "$PROJECT")"
@@ -125,5 +138,67 @@ case "$CMD" in
         || fail "$EX_OTHER" variable_failed "schedule $SID created but variable $k could not be set" "$(printf '%s' "$RESP" | jq -c '{id, description}')"
     done
     result "$(printf '%s' "$RESP" | jq -c --argjson v "$KEYS" '{action: "created", id, description, ref, cron, cron_timezone, active, next_run_at, owner: {id: .owner.id, username: .owner.username}, variables: $v}')"
+    ;;
+  update)
+    [ -n "$SID" ] || usage "update needs --id <schedule id> (from schedule.sh list)"
+    [[ "$SID" =~ ^[0-9]+$ ]] || usage "--id must be a pipeline schedule id (digits only), got: $SID"
+    if [ -z "$DESC" ] && [ -z "$CRON" ] && [ -z "$REF" ] && [ "$TZ_GIVEN" = false ] && [ -z "$ACTIVE" ]; then
+      usage "update needs at least one of --cron, --ref, --description, --timezone, --active"
+    fi
+    case "$ACTIVE" in ""|true|false) ;; *) usage "--active takes true or false, got: $ACTIVE" ;; esac
+    # The cron guard is the create-time one, applied before anything is read or written.
+    [ -z "$CRON" ] || validate
+    if [ "$DRY" = false ]; then
+      require_settings_token "required to update schedule $SID on $PROJECT"
+    fi
+    TMP="$(mktemp -d "${TMPDIR:-/tmp}/silkops-schedule.XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
+    # Fail-closed lookup: only a 404 means the schedule is absent. Any other failure aborts
+    # the run — nothing is written on the back of an unverified read.
+    if ! api_get "projects/$ENC/pipeline_schedules/$SID" >"$TMP/cur.json" 2>"$TMP/lookup.err"; then
+      LERR="$(redact <"$TMP/lookup.err" | tr '\n' ' ')"
+      if grep '404' "$TMP/lookup.err" >/dev/null; then
+        fail "$EX_NOT_FOUND" not_found "pipeline schedule $SID does not exist on $PROJECT" "$(jq -cn --arg p "$PROJECT" --argjson i "$SID" '{project: $p, id: $i}')"
+      fi
+      fail "$EX_OTHER" lookup_failed "could not read pipeline schedule $SID of $PROJECT; refusing to write without a successful lookup: $LERR" \
+        "$(jq -cn --arg p "$PROJECT" --argjson i "$SID" '{project: $p, id: $i}')"
+    fi
+    CUR="$(cat "$TMP/cur.json")"
+    # Proposed = the given fields only; PATCH is the diff against current, so an unchanged
+    # field is never sent and a run with no diff writes nothing at all.
+    PROPOSED="$(jq -cn --arg d "$DESC" --arg c "$CRON" --arg r "$REF" --arg tz "$TZ_NAME" --argjson tzg "$TZ_GIVEN" --arg a "$ACTIVE" \
+      '(if $d != "" then {description: $d} else {} end)
+       + (if $c != "" then {cron: $c} else {} end)
+       + (if $r != "" then {ref: $r} else {} end)
+       + (if $tzg then {cron_timezone: $tz} else {} end)
+       + (if $a != "" then {active: ($a == "true")} else {} end)')"
+    PATCH="$(jq -cn --argjson cur "$CUR" --argjson p "$PROPOSED" '$p | with_entries(select(.value != $cur[.key]))')"
+    CHANGED="$(printf '%s' "$PATCH" | jq -c 'keys')"
+    # Owner is compared against the session identity that just read the schedule. Another
+    # user's schedule is flagged, never refused: the write needs Maintainer and leaves
+    # ownership (and therefore the job identity the schedule runs under) where it is.
+    ME="$(api_get user 2>/dev/null | jq -r '.id // empty' || true)"
+    OWNER_DIFFERS="$(jq -n --argjson cur "$CUR" --arg me "${ME:-}" '($me != "" and (($cur.owner.id // null) != ($me | tonumber))) ')"
+    OWNER_JSON='{}'
+    if [ "$OWNER_DIFFERS" = true ]; then
+      err "schedule $SID is owned by $(printf '%s' "$CUR" | jq -r '.owner.username // "another user"'), not the session identity: updating another user's schedule requires Maintainer and does not transfer ownership (it keeps running as its owner)."
+      OWNER_JSON='{"owner_differs": true}'
+    fi
+    REPORT='{id, description, cron, cron_timezone, ref, active, next_run_at, owner: {id: .owner.id, username: .owner.username}}'
+    if [ "$DRY" = true ]; then
+      result "$(jq -cn --arg p "$PROJECT" --argjson cur "$CUR" --argjson prop "$PROPOSED" --argjson ch "$CHANGED" --argjson o "$OWNER_JSON" \
+        "{project: \$p, dry_run: true, action: (if (\$ch | length) > 0 then \"updated\" else \"unchanged\" end), changed: \$ch,
+          current: (\$cur | $REPORT), proposed: ((\$cur | $REPORT) + \$prop)} + \$o")"
+      exit 0
+    fi
+    if [ "$CHANGED" = '[]' ]; then
+      result "$(jq -cn --arg p "$PROJECT" --argjson cur "$CUR" --argjson o "$OWNER_JSON" \
+        "{project: \$p, action: \"unchanged\", changed: []} + (\$cur | $REPORT) + \$o")"
+      exit 0
+    fi
+    printf '%s' "$PATCH" >"$TMP/body.json"
+    RESP="$(api_settings PUT "projects/$ENC/pipeline_schedules/$SID" --input "$TMP/body.json")" \
+      || fail "$EX_OTHER" update_failed "could not update schedule $SID on $PROJECT" "$(jq -cn --arg p "$PROJECT" --argjson i "$SID" --argjson ch "$CHANGED" '{project: $p, id: $i, changed: $ch}')"
+    result "$(printf '%s' "$RESP" | jq -c --arg p "$PROJECT" --argjson ch "$CHANGED" --argjson o "$OWNER_JSON" \
+      "{project: \$p, action: \"updated\", changed: \$ch} + ($REPORT) + \$o")"
     ;;
 esac

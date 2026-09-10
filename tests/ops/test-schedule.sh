@@ -81,5 +81,72 @@ else fail "S6" "rc=$(rc_of s6) out=$(out_of s6) writes=$(writes_of s6)"; fi
 run_case s7 schedule -- --project "$PROJECT" create --description weekly --cron '0 6 * * 1' --ref main
 if [ "$(rc_of s7)" = 3 ] && [ "$(writes_of s7)" = 0 ]; then pass "S7 create without SILKOPS_SETTINGS_TOKEN exits 3"; else fail "S7" "rc=$(rc_of s7)"; fi
 
+# --- update (S8-S16) --------------------------------------------------------
+# S8: --cron differs from the schedule's -> PUT under the settings token, changed lists cron only
+run_case s8 schedule-update $TOK -- --project "$PROJECT" update --id 31 --cron '0 22 * * *'
+if [ "$(rc_of s8)" = 0 ] && out_of s8 | jq -e '.ok == true and .action == "updated" and .id == 31 and .cron == "0 22 * * *" and .changed == ["cron"] and .owner.username == "aqua" and .next_run_at != null and (has("owner_differs") | not)' >/dev/null \
+  && [ "$(writes_of s8)" = 1 ] && log_of s8 | grep -E -- '-X PUT .*/pipeline_schedules/31 .*token=set input=present' >/dev/null \
+  && body_of s8 1 | jq -e '.method == "PUT" and .body == {cron: "0 22 * * *"}' >/dev/null; then
+  pass "S8 update --cron issues one PUT under the settings token; changed lists cron only"
+else fail "S8" "rc=$(rc_of s8) out=$(out_of s8) writes=$(writes_of s8) log=$(log_of s8 | tr '\n' ';')"; fi
+
+# S9: the same call when the cron already matches -> unchanged, zero writes
+run_case s9 schedule-update $TOK -- --project "$PROJECT" update --id 33 --cron '0 22 * * *'
+if [ "$(rc_of s9)" = 0 ] && out_of s9 | jq -e '.ok == true and .action == "unchanged" and .id == 33 and .changed == []' >/dev/null && [ "$(writes_of s9)" = 0 ]; then
+  pass "S9 update with nothing to change reports unchanged and writes nothing"
+else fail "S9" "rc=$(rc_of s9) out=$(out_of s9) writes=$(writes_of s9)"; fi
+
+# S10: the create-time cron guard applies to update too
+run_case s10a schedule-update $TOK -- --project "$PROJECT" update --id 31 --cron '* 22 * * *'
+run_case s10b schedule-update $TOK -- --project "$PROJECT" update --id 31 --cron '* 22 * * *' --allow-frequent
+run_case s10c schedule-update $TOK -- --project "$PROJECT" update --id 31 --cron '*/15 * * * *'
+if [ "$(rc_of s10a)" = 7 ] && out_of s10a | jq -e '.ok == false and .error == "cron_too_frequent"' >/dev/null && [ "$(writes_of s10a)" = 0 ] \
+  && [ "$(rc_of s10c)" = 7 ] && [ "$(writes_of s10c)" = 0 ] \
+  && [ "$(rc_of s10b)" = 0 ] && out_of s10b | jq -e '.action == "updated" and .changed == ["cron"]' >/dev/null && [ "$(writes_of s10b)" = 1 ]; then
+  pass "S10 update refuses a sub-daily cron (7 cron_too_frequent, no write); --allow-frequent proceeds"
+else fail "S10" "a=$(rc_of s10a)/$(writes_of s10a) b=$(rc_of s10b)/$(writes_of s10b) c=$(rc_of s10c)/$(writes_of s10c) out_b=$(out_of s10b)"; fi
+
+# S11: --id is required, and so is at least one mutable field
+run_case s11a schedule-update $TOK -- --project "$PROJECT" update --cron '0 22 * * *'
+run_case s11b schedule-update $TOK -- --project "$PROJECT" update --id 31
+if [ "$(rc_of s11a)" = 2 ] && out_of s11a | jq -e '.error == "usage"' >/dev/null && err_of s11a | grep -- '--id' >/dev/null && [ "$(calls_of s11a)" = 0 ] \
+  && [ "$(rc_of s11b)" = 2 ] && [ "$(calls_of s11b)" = 0 ] && err_of s11b | grep -- '--description' >/dev/null && err_of s11b | grep -- '--active' >/dev/null; then
+  pass "S11 update without --id, and without any mutable field, exit 2 before any glab call"
+else fail "S11" "a=$(rc_of s11a)/$(calls_of s11a) b=$(rc_of s11b)/$(calls_of s11b) err_b=$(err_of s11b | tail -1)"; fi
+
+# S12: a lookup that fails for any reason but 404 aborts (never "absent")
+run_case s12 schedule-lookup-500 $TOK -- --project "$PROJECT" update --id 31 --cron '0 22 * * *'
+if [ "$(rc_of s12)" = 1 ] && out_of s12 | jq -e '.ok == false and .error == "lookup_failed"' >/dev/null && [ "$(writes_of s12)" = 0 ] \
+  && ! out_of s12 | grep 'glpat-' >/dev/null && ! err_of s12 | grep 'glpat-' >/dev/null; then
+  pass "S12 update with a 500 on the lookup exits 1 lookup_failed, writes nothing, stderr redacted"
+else fail "S12" "rc=$(rc_of s12) out=$(out_of s12) writes=$(writes_of s12)"; fi
+
+# S13: 404 is the one answer that means absent
+run_case s13 schedule-lookup-404 $TOK -- --project "$PROJECT" update --id 31 --cron '0 22 * * *'
+if [ "$(rc_of s13)" = 5 ] && out_of s13 | jq -e '.ok == false and .error == "not_found"' >/dev/null && [ "$(writes_of s13)" = 0 ]; then
+  pass "S13 update of a schedule that does not exist exits 5 not_found, writes nothing"
+else fail "S13" "rc=$(rc_of s13) out=$(out_of s13) writes=$(writes_of s13)"; fi
+
+# S14: --dry-run reports current vs proposed and writes nothing
+run_case s14 schedule-update $TOK -- --project "$PROJECT" update --id 31 --cron '0 22 * * *' --description nightly-utc --dry-run
+if [ "$(rc_of s14)" = 0 ] && out_of s14 | jq -e '.ok == true and .dry_run == true and .action == "updated" and .current.cron == "0 5 * * *" and .current.description == "nightly" and .proposed.cron == "0 22 * * *" and .proposed.description == "nightly-utc" and (.changed | sort) == ["cron", "description"]' >/dev/null \
+  && [ "$(writes_of s14)" = 0 ]; then
+  pass "S14 update --dry-run reports current vs proposed and writes nothing"
+else fail "S14" "rc=$(rc_of s14) out=$(out_of s14) writes=$(writes_of s14)"; fi
+
+# S15: another user's schedule is flagged, not refused
+run_case s15 schedule-update $TOK -- --project "$PROJECT" update --id 34 --cron '0 22 * * *'
+if [ "$(rc_of s15)" = 0 ] && out_of s15 | jq -e '.action == "updated" and .owner_differs == true and .owner.username == "silkops-factory-records"' >/dev/null \
+  && [ "$(writes_of s15)" = 1 ] && err_of s15 | grep -i 'maintainer' >/dev/null && err_of s15 | grep -i 'ownership' >/dev/null; then
+  pass "S15 update of another user's schedule reports owner_differs, notices the Maintainer/ownership caveat, and still writes"
+else fail "S15" "rc=$(rc_of s15) out=$(out_of s15) writes=$(writes_of s15) err=$(err_of s15 | tr '\n' ';')"; fi
+
+# S16: --ref, --timezone and --active are mutable too, and the body carries only what differs
+run_case s16 schedule-update $TOK -- --project "$PROJECT" update --id 31 --ref main --timezone Europe/Amsterdam --active false
+if [ "$(rc_of s16)" = 0 ] && out_of s16 | jq -e '.action == "updated" and (.changed | sort) == ["active", "cron_timezone"]' >/dev/null \
+  && body_of s16 1 | jq -e '.body == {cron_timezone: "Europe/Amsterdam", active: false}' >/dev/null; then
+  pass "S16 update sends only the fields that differ (--ref main already matches)"
+else fail "S16" "rc=$(rc_of s16) out=$(out_of s16) body=$(body_of s16 1 2>/dev/null)"; fi
+
 echo "test-schedule: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]
