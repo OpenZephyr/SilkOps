@@ -1,0 +1,13 @@
+# Running the harness operations from a GitLab CI job (plan R14, AE6).
+# SILKOPS_CI_TOKEN: masked + protected project variable, a Developer project access token
+# with the `api` scope (docs/tokens.md). The scripts export it before any glab call so glab
+# never auto-logs-in with CI_JOB_TOKEN; when it is missing they exit 3 before any network call.
+file-issue-example:
+  image: registry.gitlab.com/void-realm-solutions/ci-cd/harness:0.1.0-r1   # pin an immutable tag
+  script:
+    - token-check.sh --project "$CI_PROJECT_PATH" --for ci
+    - printf 'Filed from job %s.\n' "$CI_JOB_URL" > body.md
+    - issue-upsert.sh --project "$CI_PROJECT_PATH" --marker-unit ci-example --plan example --run "$CI_PIPELINE_ID"
+        --title "harness example issue" --body-file body.md --labels silkops
+  rules:
+    - when: manual

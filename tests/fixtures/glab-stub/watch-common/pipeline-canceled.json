@@ -1,0 +1,9 @@
+{
+  "id": 501,
+  "iid": 41,
+  "project_id": 7001,
+  "status": "canceled",
+  "ref": "refs/merge-requests/7/head",
+  "sha": "abc123",
+  "web_url": "https://gitlab.com/void-realm-solutions/silkops-harness-eval/-/pipelines/501"
+}

@@ -1,0 +1,10 @@
+GET	projects/void-realm-solutions%2Fsilkops-harness-eval	../u4-common/project.json
+GET	user	../u4-common/user.json
+GET	projects/void-realm-solutions%2Fconsumer-x	../u4-common/consumer-x.json
+GET	projects/void-realm-solutions%2Fconsumer-old	../u4-common/consumer-old.json
+GET	projects/void-realm-solutions%2Fteam	-	404
+GET	groups/void-realm-solutions%2Fteam	../u4-common/group-team.json
+GET	projects/*/job_token_scope/groups_allowlist*	../u4-common/groups-allowlist.json
+GET	projects/*/job_token_scope/allowlist*	../u4-common/allowlist.json
+POST	projects/*/job_token_scope/groups_allowlist	../u4-common/group-allowlist-added.json	201
+POST	projects/*/job_token_scope/allowlist	../u4-common/allowlist-added.json	201

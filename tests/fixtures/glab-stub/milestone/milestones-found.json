@@ -1,0 +1,2 @@
+[{"id": 77, "iid": 3, "project_id": 7001, "title": "Harness v0.1", "state": "active", "description": "<!-- silkops: v=0.1.0 plan=plan.md unit=milestone run=r1 -->\n<!-- silkops:managed -->\nold milestone body\n<!-- /silkops:managed -->\n\nHuman notes below.\n", "web_url": "https://gitlab.com/void-realm-solutions/silkops-harness-eval/-/milestones/3"},
+ {"id": 78, "iid": 4, "project_id": 7001, "title": "Harness v0.1 follow-ups", "state": "active", "description": "", "web_url": "https://gitlab.com/void-realm-solutions/silkops-harness-eval/-/milestones/4"}]

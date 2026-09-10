@@ -1,0 +1,5 @@
+GET	projects/void-realm-solutions%2Fsilkops-harness-eval	../u4-common/project.json
+GET	user	../u4-common/user.json
+GET	projects/*/merge_requests[?]*	../u4-common/mrs-open.json
+PUT	projects/*/merge_requests/7	../u4-common/mr.json
+GET	projects/*/merge_requests/7	../u4-common/mr.json

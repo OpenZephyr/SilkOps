@@ -1,0 +1,9 @@
+{
+  "id": 501,
+  "iid": 41,
+  "project_id": 7001,
+  "status": "failed",
+  "ref": "feat/u6",
+  "sha": "abc123",
+  "web_url": "https://gitlab.com/void-realm-solutions/silkops-harness-eval/-/pipelines/501"
+}

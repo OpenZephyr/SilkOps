@@ -1,0 +1,7 @@
+GET	projects/void-realm-solutions%2Fsilkops-harness-eval	../u4-common/project.json
+GET	user	../u4-common/user.json
+GET	projects/*/merge_requests[?]source_branch=*	../u4-common/empty.json
+GET	projects/*/pipelines/501	../watch-common/pipeline-failed-branch.json
+GET	projects/*/pipelines/501/jobs*	../watch-common/jobs-failed.json
+GET	projects/*/jobs/9001/trace	../../traces/docker-hub-502.log
+POST	projects/*/jobs/9001/retry	../watch-common/retry-created.json	201

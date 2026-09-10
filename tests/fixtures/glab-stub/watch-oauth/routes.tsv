@@ -1,0 +1,8 @@
+GET	projects/void-realm-solutions%2Fsilkops-harness-eval	../u4-common/project.json
+GET	user	../u4-common/user.json
+GET	projects/*/merge_requests/7	../watch-common/mr-failed.json
+GET	projects/*/pipelines/501	../watch-common/pipeline-failed.json
+GET	projects/*/pipelines/501/jobs*	../watch-common/jobs-failed.json
+GET	projects/*/jobs/9001/trace	../watch-common/trace-oauth.log
+GET	projects/*/merge_requests/7/notes*	../u4-common/empty.json
+POST	projects/*/merge_requests/7/notes	../watch-common/note-created.json	201

@@ -1,0 +1,1 @@
+plain line: pipeline 12345 for main succeeded in 4m12s (no secrets here) http://gitlab.com/x/y/-/jobs/1

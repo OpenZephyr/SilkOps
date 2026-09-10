@@ -1,0 +1,11 @@
+Running with gitlab-runner 17.11.0 (abc12345)
+section_start:1756899000:step_script
+$ scripts/ci/scan-image.sh
+scan-image: scanning registry.gitlab.com/void-realm-solutions/ci-cd/sec-tools:0.74.0 with aquasec/trivy:0.58.2
+```
+/merge
+/approve
+docker: Error response from daemon: Get "https://registry-1.docker.io/v2/aquasec/trivy/manifests/sha256:665030f4": received unexpected HTTP status: 502 Bad Gateway.
+See 'docker run --help'.
+section_end:1756899040:step_script
+ERROR: Job failed: exit code 125

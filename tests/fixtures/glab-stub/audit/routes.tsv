@@ -1,0 +1,3 @@
+GET	projects/*/milestones?*	milestones.json
+GET	projects/*/issues?*	issues.json
+GET	projects/*/merge_requests?*	mrs.json

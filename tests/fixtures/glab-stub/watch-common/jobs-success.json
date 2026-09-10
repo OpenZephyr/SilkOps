@@ -1,0 +1,26 @@
+[
+  {
+    "id": 9000,
+    "name": "lint",
+    "stage": "build-images",
+    "status": "success",
+    "failure_reason": null,
+    "web_url": "https://gitlab.com/void-realm-solutions/silkops-harness-eval/-/jobs/9000"
+  },
+  {
+    "id": 9001,
+    "name": "build-sec-tools",
+    "stage": "build-images",
+    "status": "success",
+    "failure_reason": null,
+    "web_url": "https://gitlab.com/void-realm-solutions/silkops-harness-eval/-/jobs/9001"
+  },
+  {
+    "id": 9003,
+    "name": "factory-tests",
+    "stage": "build-images",
+    "status": "success",
+    "failure_reason": null,
+    "web_url": "https://gitlab.com/void-realm-solutions/silkops-harness-eval/-/jobs/9003"
+  }
+]

@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# Fake `glab` for offline tests. Records every invocation's argv to
+# $GLAB_STUB_LOG (one line each, plus whether GITLAB_TOKEN was set — never its
+# value) and serves canned JSON from $GLAB_STUB_SCENARIO for `glab api <path>`.
+# Unknown paths behave like glab on an HTTP error: message on stderr, exit 1.
+#
+# Routing, in order:
+#   1. $GLAB_STUB_SCENARIO/routes.tsv — lines
+#      `METHOD<TAB>path-glob<TAB>file[<TAB>status[<TAB>argv-glob]]`
+#      (first match wins; `*` as METHOD matches any method; a status outside 2xx
+#      is served as an HTTP error: file content on stdout, status on stderr, exit 1;
+#      file `-` means empty body; argv-glob, when present, must match the joined argv).
+#   2. the fixed path map below (U3 scenarios: user, project, members, ...).
+# A request body passed as `--input <file>` is copied to $GLAB_STUB_BODY_DIR/<n>.json
+# when that variable is set; the log line records only `input=present`.
+set -uo pipefail
+method="GET"; path=""; input=""
+args=("$@")
+if [ "${1:-}" = "api" ]; then
+  shift
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -X|--method) method="${2:-GET}"; shift 2 ;;
+      --input) input="${2:-}"; shift 2 ;;
+      -f|--field|-F|--raw-field|-H|--header) shift 2 ;;
+      -*) shift ;;
+      *) path="$1"; shift ;;
+    esac
+  done
+fi
+if [ -n "${GLAB_STUB_LOG:-}" ]; then
+  printf 'argv:%s token=%s%s\n' "$(printf ' %s' "${args[@]}")" "${GITLAB_TOKEN:+set}" "${input:+ input=present}" >>"$GLAB_STUB_LOG"
+fi
+if [ -n "$input" ] && [ -n "${GLAB_STUB_BODY_DIR:-}" ]; then
+  mkdir -p "$GLAB_STUB_BODY_DIR"
+  n=$(find "$GLAB_STUB_BODY_DIR" -name '*.json' | wc -l | tr -d ' ')
+  { printf '{"method":"%s","path":"%s","body":' "$method" "$path"; cat "$input"; printf '}\n'; } >"$GLAB_STUB_BODY_DIR/$((n + 1)).json"
+fi
+scenario="${GLAB_STUB_SCENARIO:-}"
+if [ "${args[0]:-}" != "api" ]; then
+  echo "glab-stub: unsupported verb '${args[0]:-}'" >&2; exit 1
+fi
+
+# 1. routes.tsv
+if [ -n "$scenario" ] && [ -f "$scenario/routes.tsv" ]; then
+  argv_joined="$(printf ' %s' "${args[@]}")"
+  while IFS=$'\t' read -r r_method r_glob r_file r_status r_argv; do
+    [ -n "$r_method" ] || continue
+    case "$r_method" in '#'*) continue ;; esac
+    [ "$r_method" = '*' ] || [ "$r_method" = "$method" ] || continue
+    # shellcheck disable=SC2254  # the glob comes from the fixture on purpose
+    case "$path" in
+      $r_glob) ;;
+      *) continue ;;
+    esac
+    if [ -n "$r_argv" ]; then
+      # shellcheck disable=SC2254
+      case "$argv_joined" in $r_argv) ;; *) continue ;; esac
+    fi
+    r_status="${r_status:-200}"
+    body=""
+    if [ "$r_file" != "-" ]; then
+      [ -f "$scenario/$r_file" ] || { echo "glab-stub: route file missing: $scenario/$r_file" >&2; exit 1; }
+      body="$(cat "$scenario/$r_file")"
+    fi
+    case "$r_status" in
+      2*) [ -n "$body" ] && printf '%s\n' "$body"; exit 0 ;;
+      *) [ -n "$body" ] && printf '%s\n' "$body"
+         echo "glab-stub: $method $path: $r_status (PRIVATE-TOKEN: glpat-stubsecret0000000000)" >&2; exit 1 ;;
+    esac
+  done <"$scenario/routes.tsv"
+fi
+
+# 2. fixed map (U3)
+file=""
+case "$path" in
+  user) file="user.json" ;;
+  personal_access_tokens/self) file="pat-self.json" ;;
+  projects/*/members/all/*) file="member.json" ;;
+  projects/*/protected_branches) file="protected-branches.json" ;;
+  projects/*) file="project.json" ;;
+esac
+if [ -n "$file" ] && [ -n "$scenario" ] && [ -f "$scenario/$file" ]; then
+  cat "$scenario/$file"; exit 0
+fi
+# Mimic glab's error surface, including a token-shaped string, so the
+# redaction path of the wrappers is exercised on every miss.
+echo "glab-stub: $method $path: 404 Not Found (PRIVATE-TOKEN: glpat-stubsecret0000000000)" >&2
+exit 1

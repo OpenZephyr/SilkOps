@@ -1,0 +1,5 @@
+GET	projects/void-realm-solutions%2Fsilkops-harness-eval	../u4-common/project.json
+GET	user	../u4-common/user.json
+GET	projects/*/milestones[?]*	../milestone/milestones-found.json
+PUT	projects/*/milestones/77	../milestone/milestone-updated.json
+POST	projects/*/milestones	../milestone/milestone-created.json	201

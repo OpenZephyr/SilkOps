@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# Fake `curl` for registry.sh tests. Serves a JWT and a tiny stateful v2
+# registry from $CURL_STUB_STATE (a per-test copy of tests/fixtures/registry).
+#
+# Contract enforced loudly (exit 99): nothing token-shaped may be on argv —
+# no `Authorization`, `Bearer`, `glpat-`, `eyJ…`, no `-u`/`--user`. Credentials
+# must arrive as a curl config on stdin (`-K -`), which is where we read the
+# auth *kind* (basic|bearer|none) — never the value — for $CURL_STUB_LOG.
+#
+# Supported argv: -K - | -s -S | -X <m> | -I | -H <hdr> | -o <file> | -D <file>
+#   -w <fmt> (only %{http_code}) | --data-binary @<file> | <url>
+# Env: CURL_STUB_FAIL_URL_GLOB — a URL matching it fails like a network error (exit 7).
+set -uo pipefail
+for a in "$@"; do
+  case "$a" in
+    *Authorization*|*authorization*|*Bearer*|*glpat-*|*eyJ*|-u|--user|-u*)
+      echo "curl-stub: REFUSED — token-shaped argument on argv" >&2; exit 99 ;;
+  esac
+done
+method="GET"; url=""; out=""; dump=""; want_code=""; data=""; config_stdin=""; accept=""; ctype=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -K) [ "$2" = "-" ] && config_stdin=1; shift 2 ;;
+    -X) method="$2"; shift 2 ;;
+    -I) method="HEAD"; shift ;;
+    -H) case "$2" in Accept:*) accept="${2#Accept: }" ;; Content-Type:*) ctype="${2#Content-Type: }" ;; esac; shift 2 ;;
+    -o) out="$2"; shift 2 ;;
+    -D) dump="$2"; shift 2 ;;
+    -w) want_code="$2"; shift 2 ;;
+    --data-binary) data="${2#@}"; shift 2 ;;
+    -s|-S|-sS|-f|-L) shift ;;
+    -*) echo "curl-stub: unsupported flag $1" >&2; exit 98 ;;
+    *) url="$1"; shift ;;
+  esac
+done
+auth=none
+if [ -n "$config_stdin" ]; then
+  while IFS= read -r line; do
+    case "$line" in
+      user\ =*|user=*) auth=basic ;;
+      header\ =*Authorization:\ Bearer*|header=*Authorization:\ Bearer*) auth=bearer ;;
+    esac
+  done
+fi
+[ -n "${CURL_STUB_LOG:-}" ] && printf 'curl: %s %s auth=%s accept=%s ctype=%s\n' "$method" "$url" "$auth" "$accept" "$ctype" >>"$CURL_STUB_LOG"
+
+# shellcheck disable=SC2254
+case "$url" in ${CURL_STUB_FAIL_URL_GLOB:-__never__}) echo "curl: (7) Failed to connect to registry.gitlab.com port 443" >&2; exit 7 ;; esac
+
+state="${CURL_STUB_STATE:?CURL_STUB_STATE unset}"
+sha() { if command -v sha256sum >/dev/null; then sha256sum | cut -d' ' -f1; else shasum -a 256 | cut -d' ' -f1; fi; }
+respond() { # <code> <body-file-or-empty> <extra-headers…>
+  local code="$1" body="$2"; shift 2
+  { printf 'HTTP/1.1 %s\r\n' "$code"; for h in "$@"; do printf '%s\r\n' "$h"; done; printf '\r\n'; } >"${dump:-/dev/null}"
+  if [ "$method" != HEAD ] && [ -n "$body" ]; then cat "$body" >"${out:-/dev/stdout}"; fi
+  [ -n "$want_code" ] && printf '%s' "$code"
+  exit 0
+}
+case "$url" in
+  https://*/jwt/auth?*)
+    [ "$auth" = basic ] || respond 401 "$state/jwt-401.json"
+    respond 200 "$state/jwt.json" 'Content-Type: application/json' ;;
+  https://*/v2/*/blobs/*)
+    respond 404 "$state/blob-404.json" ;;
+  https://*/v2/*/manifests/*)
+    [ "$auth" = bearer ] || respond 401 "$state/jwt-401.json"
+    tag="${url##*/manifests/}"
+    f="$state/manifests/$tag.json"
+    case "$method" in
+      GET|HEAD)
+        [ -f "$f" ] || respond 404 "$state/manifest-404.json" 'Content-Type: application/json'
+        respond 200 "$f" "Content-Type: $(cat "$f.type")" "Docker-Content-Digest: sha256:$(sha <"$f")" ;;
+      PUT)
+        [ -n "$data" ] && [ -f "$data" ] || { echo "curl-stub: PUT without --data-binary @file" >&2; exit 98; }
+        [ -n "$ctype" ] || { echo "curl-stub: PUT without Content-Type" >&2; exit 98; }
+        cp "$data" "$f"; printf '%s' "$ctype" >"$f.type"
+        respond 201 "" "Docker-Content-Digest: sha256:$(sha <"$f")" ;;
+    esac ;;
+esac
+echo "curl-stub: unrouted $method $url" >&2; exit 98

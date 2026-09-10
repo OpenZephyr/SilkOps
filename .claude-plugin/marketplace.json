@@ -1,0 +1,18 @@
+{
+  "name": "silkops",
+  "owner": {
+    "name": "void-realm-solutions",
+    "url": "https://gitlab.com/void-realm-solutions"
+  },
+  "metadata": {
+    "description": "silkOps plugins"
+  },
+  "plugins": [
+    {
+      "name": "silkops-harness",
+      "source": "./",
+      "description": "silkOps operating harness: GitLab dev-loop skills over glab-backed operations scripts",
+      "version": "0.1.0"
+    }
+  ]
+}
