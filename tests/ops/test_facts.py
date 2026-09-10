@@ -61,7 +61,15 @@ class FactsFile(unittest.TestCase):
             self.assertIn(fact["class"], ("transient", "permanent"), fact["id"])
             self.assertIsInstance(fact["retry_safe"], bool, fact["id"])
             self.assertRegex(fact["id"], r"^[a-z0-9][a-z0-9-]*$")
-            self.assertRegex(fact["source"], r"^[\w./-]+(\.\w+)(:\d+(-\d+)?)?$", fact["id"])
+            # A fact's source names where it was learned. Facts now come from more than one
+            # repo, so an optional `<repo> ` qualifier precedes the path, and a path may be
+            # followed by `:<line>`, `:<from>-<to>`, or a short free-text locator naming the
+            # thing in the file (a job name, a section) when no single line owns the truth.
+            self.assertRegex(
+                fact["source"],
+                r"^([a-z0-9][a-z0-9-]* )?[\w./-]+\.\w+(:\d+(-\d+)?| [\w .-]+)?$",
+                fact["id"],
+            )
 
     def test_patterns_compile(self):
         for fact in self.facts:

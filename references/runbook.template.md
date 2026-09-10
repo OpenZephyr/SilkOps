@@ -54,6 +54,12 @@ not an inline call.
    times an hour; `schedule.sh validate` refuses that shape).
 5. On the `silkops-harness` project, allow-list `ci-cd` under job token permissions so the
    factory can fetch the release asset.
+6. On `void-nance`, enable Settings -> Merge requests -> "Pipelines must succeed" so the
+   `fixtures` job blocks the merge button (GitLab has no per-job required check; see fact
+   `fixture-gate-red-is-advisory-without-project-setting`).
+7. On `void-nance`, create `NASDAQ_DATA_LINK_API_KEY` under Settings -> CI/CD -> Variables as a
+   masked AND protected variable; the key is never written into `.gitlab-ci.yml` (see fact
+   `pit-credential-withheld-on-unprotected-ref`).
 
 ## Watching a pipeline: what the states mean
 
