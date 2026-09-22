@@ -33,22 +33,23 @@ overlay, then `${CLAUDE_PLUGIN_ROOT}/facts/environment.json`; a new fact goes in
    `detailed_merge_status`, `superseded`, `still_running`, `changes`, `failed[]`
    (`classification` + `root_cause` + `web_url` + `first_failure`), `retried`, `retry_skipped`, `retry_unsafe`, `notes`,
    `resume_hint`. Exit codes: 0 report (terminal or still running), 6 retry refused as unsafe,
-   5 not found / no head pipeline yet (the MR was just pushed — wait a moment and re-run).
+   5 not found.
 3. **Act on the verdict.**
-   - **`still_running: true`** — report the `changes` since the last poll (job → status) and
-     loop: run Step 1 again. Across sessions, resume with the `resume_hint` verbatim
-     (`watch.sh --project P --mr <iid> --pipeline <id>`): the pipeline id is the checkpoint,
-     the `--mr` keeps the superseded guard and merge status on the resumed watch, no local
-     state is needed. Never drop `--mr` from the hint; a bare `--pipeline` with `--retry`
-     resolves the MR from the pipeline and refuses the retry (`no_mr_context`) when it cannot.
+   - **`still_running: true`** — this is the normal end of one call for a long pipeline, not an
+     error. Say in one line how far it is (`expected_duration_s`, `waited_s`) and run the
+     `resume_hint` verbatim with `--wait` set to `resume_after_s` (capped under the tool
+     timeout). Keep doing that until `terminal`; never wrap `watch.sh` or anything else in a
+     shell `timeout` (macOS has none) and never poll by hand. `waiting_for: head_pipeline`
+     means the MR was just pushed and the pipeline is not created yet: resume the same way.
+     The hint carries `--mr` on purpose: it keeps the superseded guard and the merge status.
    - **`errors[]` non-empty** — a jobs listing failed on the named poll; the report carries the
      previous poll's job snapshot, not an empty one. Say so; do not read `failed: []` as green.
    - **`ready: true`** — say exactly: "ready, not merging — a human merges", with the MR URL,
-     the pipeline id and `detailed_merge_status: mergeable`. Stop. Do not call anything else.
-   - **terminal, `status: success`, `ready: false`** — report `detailed_merge_status` verbatim and
-     what it means (`need_rebase` → rebase and re-push; `draft_status` → un-draft;
-     `discussions_not_resolved` → threads to resolve; `not_approved` → approval outstanding;
-     `ci_still_running` → a newer pipeline is running, watch that one). Stop.
+     the pipeline id and `detailed_merge_status: mergeable` (`approvals` already satisfied).
+     Stop. Do not call anything else.
+   - **terminal, `status: success`, `ready: false`** — report `not_ready_reason` verbatim (it
+     folds in `detailed_merge_status` and outstanding approvals) and the human step it implies.
+     Stop.
    - **`status: failed`** — for each entry in `failed[]` present: job name and id, its `web_url`,
      the classification (`fact`, `class`, `transient`, `retry_safe`, `reason`, `step` — the job
      name when no fact matched), `first_failure` when non-null (the first pytest `FAILED ` line)

@@ -3,3 +3,4 @@ GET	user	../u4-common/user.json
 GET	projects/*/merge_requests/7	../watch-common/mr-notready.json
 GET	projects/*/pipelines/501	../watch-common/pipeline-success.json
 GET	projects/*/pipelines/501/jobs*	../watch-common/jobs-success.json
+GET	projects/*/merge_requests/7/approvals	../watch-common/approvals-pending.json

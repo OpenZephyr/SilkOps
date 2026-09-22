@@ -116,7 +116,20 @@ if [ -n "$MR" ]; then
         read_mr
       done
     fi
-    [ "$HEAD_ID" != null ] || fail "$EX_NOT_FOUND" no_head_pipeline "merge request !$MR has no head pipeline yet" "$(jq -cn --argjson iid "$MR" --argjson u "$MR_URL" '{mr_iid: $iid, web_url: $u}')"
+    # Right after mr-upsert creates the MR, GitLab has not created the pipeline yet (#30):
+    # wait for one inside the budget instead of failing; the budget spent is a resumable report.
+    waited=0
+    while [ "$HEAD_ID" = null ]; do
+      if [ "$waited" -ge "$WAIT" ]; then
+        result "$(jq -cn --argjson iid "$MR" --argjson u "$MR_URL" --arg hint "watch.sh --project $PROJECT --mr $MR${SHA:+ --sha $SHA}" \
+          '{mr_iid: $iid, mr_web_url: $u, still_running: true, waiting_for: "head_pipeline", head_pipeline_id: null, terminal: false, ready: false, resume_hint: $hint}')"
+        exit 0
+      fi
+      err "MR !$MR has no head pipeline yet; waiting ${INTERVAL}s"
+      sleep "${SILKOPS_WATCH_SLEEP:-$INTERVAL}"; waited=$((waited + INTERVAL))
+      MRJ="$(fetch_mr)" || fail "$EX_NOT_FOUND" not_found "merge request !$MR disappeared while waiting for its head pipeline"
+      read_mr
+    done
     PIPE_ID="$HEAD_ID"
   fi
 else
@@ -133,6 +146,7 @@ JOBS_KNOWN=false    # a jobs listing has succeeded at least once
 JOBS_STALE=false    # this poll's listing failed; JOBS is the previous snapshot
 NO_MR_CONTEXT=false; MR_RESOLVE_TRIED=false
 JOBS_PER_PAGE=100; JOBS_MAX_PAGES=50
+CONTEXT_READ=false; EXPECTED=null; APPROVALS=null
 
 append() {  # append <VAR> <json> — VAR is a JSON array
   local cur="${!1}"
@@ -152,7 +166,30 @@ report() {  # report <extra-json> — the single JSON result
   if [ "$STATUS" = success ]; then
     if [ -n "$MR" ]; then [ "$DMS" = '"mergeable"' ] && ready=true; else ready=true; fi
   fi
+  # (#38) why a terminal green pipeline is still not mergeable, in one sentence
+  local reason=null
+  if [ "$terminal" = true ] && [ "$ready" = false ] && [ -n "$MR" ]; then
+    reason="$(jq -cn --argjson d "$DMS" --argjson a "$APPROVALS" '
+      ({need_rebase: "rebase onto the target branch and push again",
+        draft_status: "the MR is a draft; mark it ready",
+        discussions_not_resolved: "unresolved review threads",
+        not_approved: "approval outstanding",
+        ci_still_running: "a newer pipeline is running; watch that one",
+        ci_must_pass: "the pipeline did not pass",
+        conflict: "merge conflicts with the target branch",
+        blocked_status: "blocked by another merge request",
+        not_open: "the MR is not open",
+        mergeable: null}[$d] // ("detailed_merge_status is " + ($d // "unknown")))
+      | if . != null and $a != null and ($a.approvals_left // 0) > 0 then . + "; " + ($a.approvals_left | tostring) + " approval(s) outstanding" else . end')"
+  fi
+  # (#31) when to come back: what is left of the expected duration, never under one interval
+  local resume_after=null
+  if [ "$terminal" = false ]; then
+    resume_after="$(jq -cn --argjson e "$EXPECTED" --argjson w "$ELAPSED" --argjson i "$INTERVAL" \
+      'if $e == null then $i else ([$e - $w, $i] | max) end')"
+  fi
   result "$(jq -cn \
+    --argjson expected "$EXPECTED" --argjson resume_after "$resume_after" --argjson approvals "$APPROVALS" --argjson reason "$reason" \
     --arg project "$PROJECT" --argjson mr_iid "${MR:-null}" --argjson mr_url "$MR_URL" \
     --argjson pid "$PIPE_ID" --argjson pipe "$PIPE_JSON" --arg status "$STATUS" \
     --argjson terminal "$terminal" --argjson ready "$ready" --argjson dms "$DMS" \
@@ -170,6 +207,8 @@ report() {  # report <extra-json> — the single JSON result
      retried: $retried, retry_log: $retry_log, retry_skipped: $retry_skipped, retry_unsafe: $retry_unsafe,
      notes: $notes, errors: $errors, polls: $polls, waited_s: $waited, wait_s: $wait, interval_s: $interval,
      still_running: (($terminal | not)),
+     expected_duration_s: $expected, resume_after_s: $resume_after,
+     approvals: $approvals, not_ready_reason: $reason,
      resume_hint: $hint} + $extra')"
 }
 # resume_hint — the checkpoint carries the MR too, so a resumed watch keeps the superseded guard.
@@ -336,6 +375,18 @@ post_note() {
 while :; do
   POLLS=$((POLLS + 1))
   PIPE_JSON="$(api_get "projects/$ENC/pipelines/$PIPE_ID")" || fail "$EX_NOT_FOUND" not_found "pipeline $PIPE_ID not found in $PROJECT"
+  if [ "$CONTEXT_READ" = false ]; then
+    CONTEXT_READ=true
+    # (#31) how long this ref's last green pipeline took: the expected duration of this one.
+    ref="$(printf '%s' "$PIPE_JSON" | jq -r '.ref // ""')"
+    if [ -n "$ref" ]; then
+      EXPECTED="$(api_get "projects/$ENC/pipelines?ref=$(urlenc "$ref")&status=success&per_page=1" 2>/dev/null | jq -c '.[0].duration // null' 2>/dev/null || echo null)"
+    fi
+    # (#38) the review policy is part of the verdict: approvals outstanding block a merge too.
+    if [ -n "$MR" ]; then
+      APPROVALS="$(api_get "projects/$ENC/merge_requests/$MR/approvals" 2>/dev/null | jq -c '{approved: (.approved // false), approvals_left: (.approvals_left // 0), approvals_required: (.approvals_required // 0)}' 2>/dev/null || echo null)"
+    fi
+  fi
   STATUS="$(printf '%s' "$PIPE_JSON" | jq -r '.status // "unknown"')"
   if [ "$RETRY" = true ] && [ -z "$MR" ] && [ "$MR_RESOLVE_TRIED" != true ]; then
     MR_RESOLVE_TRIED=true; resolve_mr_from_pipeline
