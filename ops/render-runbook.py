@@ -4,7 +4,7 @@
 The facts file is the single source for environment facts (plan KTD7): the runbook's
 gotcha section is generated from it, and classify-failure.py matches traces against the
 same patterns. Usage:
-  render-runbook.py [--root <plugin root>] [--check]
+  render-runbook.py [--root <plugin root>] [--facts FILE ...] [--check]
 --check exits 1 when the checked-in runbook differs from a fresh render (CI diff gate).
 Stdlib only, Python 3.9.
 """
@@ -31,8 +31,9 @@ def render_facts(facts):
     return "\n".join(out)
 
 
-def render(root):
-    facts = json.load(open(os.path.join(root, "facts", "environment.json")))["facts"]
+def render(root, facts_files=None):
+    facts_files = facts_files or [os.path.join(root, "facts", "environment.json")]
+    facts = [f for path in facts_files for f in json.load(open(path))["facts"]]
     tpl = open(os.path.join(root, "references", "runbook.template.md")).read()
     if "{{FACTS}}" not in tpl:
         sys.exit("template lacks {{FACTS}} placeholder")
@@ -42,10 +43,12 @@ def render(root):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", default=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    ap.add_argument("--facts", action="append", metavar="FILE",
+                    help="facts file, repeatable, rendered in order (default: the plugin core alone)")
     ap.add_argument("--check", action="store_true")
     a = ap.parse_args()
     out_path = os.path.join(a.root, "references", "runbook.md")
-    rendered = render(a.root)
+    rendered = render(a.root, a.facts)
     if a.check:
         current = open(out_path).read() if os.path.exists(out_path) else ""
         if current != rendered:

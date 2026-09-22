@@ -343,5 +343,18 @@ if command -v shellcheck >/dev/null 2>&1; then
   else fail "L3" "$(cat "$SCRATCH/shellcheck.log")"; fi
 fi
 
+# --- U1 (v0.2): an overlay fact overlapping a core pattern wins, and the JSON names every facts file
+mkdir -p "$SCRATCH/ov"
+cat >"$SCRATCH/ov/hub.json" <<'EOF'
+{"schema_version":"1","facts":[{"id":"overlay-hub-outage","pattern":"502 Bad Gateway","explanation":"overlay says: hub is down for the day","class":"permanent","retry_safe":false,"step":"scan-image","source":"overlay"}]}
+EOF
+run_case w30 watch-failed-transient SILKOPS_FACTS_OVERLAY="$SCRATCH/ov" -- "${COMMON[@]}" --mr 7 --wait 0
+if [ "$(rc_of w30)" = 0 ] && out_of w30 | jq -e '.failed[0].classification.fact == "overlay-hub-outage"
+      and .failed[0].classification.retry_safe == false
+      and .failed[0].classification.facts_files == ["hub.json", "environment.json"]' >/dev/null \
+  && [ "$(retries_of w30)" = 0 ]; then
+  pass "W30 (U1) overlay fact wins over the core docker-hub-502 pattern; no retry; facts_files lists overlay then core"
+else fail "W30" "rc=$(rc_of w30) out=$(out_of w30 | head -c 1500) err=$(err_of w30 | tail -3)"; fi
+
 echo "test-watch: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

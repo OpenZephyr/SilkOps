@@ -203,6 +203,19 @@ else
 fi
 
 # --- T15: shellcheck on ops/*.sh and ops/lib/*.sh (skipped if not installed)
+# --- T16 (U1 v0.2): facts_paths lists repo, overlay (sorted), core — earlier wins downstream
+mkdir -p "$SCRATCH/t16/repo/.silkops" "$SCRATCH/t16/ov"
+T16="$(cd "$SCRATCH/t16" && pwd)"   # normalised: $TMPDIR may end in a slash
+echo '{"facts":[]}' >"$T16/repo/.silkops/facts.json"
+echo '{"facts":[]}' >"$T16/ov/b.json"; echo '{"facts":[]}' >"$T16/ov/a.json"
+run_snippet t16 SILKOPS_FACTS_OVERLAY="$T16/ov" -- 'cd "'"$T16"'/repo"; . "$PRELUDE"; facts_paths'
+run_snippet t16b SILKOPS_FACTS_OVERLAY="$T16/none" -- 'cd "'"$T16"'"; . "$PRELUDE"; facts_paths'
+if [ "$(rc_of t16)" = 0 ] \
+  && [ "$(out_of t16)" = "$(printf '%s\n%s\n%s\n%s' "$T16/repo/.silkops/facts.json" "$T16/ov/a.json" "$T16/ov/b.json" "$ROOT/facts/environment.json")" ] \
+  && [ "$(out_of t16b)" = "$ROOT/facts/environment.json" ]; then
+  pass "T16 facts_paths: repo .silkops/facts.json, overlay *.json sorted, core; core alone when nothing else exists"
+else fail "T16" "rc=$(rc_of t16) out=$(out_of t16) out_b=$(out_of t16b) err=$(err_of t16)"; fi
+
 if command -v shellcheck >/dev/null 2>&1; then
   if shellcheck -x --source-path=SCRIPTDIR "$ROOT"/ops/*.sh "$ROOT"/ops/lib/*.sh >"$SCRATCH/shellcheck.log" 2>&1; then
     pass "T15 shellcheck clean on ops/*.sh and ops/lib/*.sh"

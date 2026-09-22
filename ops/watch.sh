@@ -233,8 +233,10 @@ triage_job() {
     else
       ff=null
     fi
-    cl="$(python3 "$OPS/classify-failure.py" "$tf" 2>/dev/null | redact \
-      | jq -c '{transient, retry_safe, fact, class, reason, step, no_retry_after, marker_hit_before_failure, marker_line_no, failure_line_no, hit_count: (.hits | length), facts_file: (.facts_file | split("/") | last)}')" \
+    local fa=(); local fp
+    while IFS= read -r fp; do fa+=(--facts "$fp"); done < <(facts_paths)
+    cl="$(python3 "$OPS/classify-failure.py" "$tf" "${fa[@]}" 2>/dev/null | redact \
+      | jq -c '{transient, retry_safe, fact, class, reason, step, no_retry_after, marker_hit_before_failure, marker_line_no, failure_line_no, hit_count: (.hits | length), facts_files: [.facts_file | split(",")[] | split("/") | last]}')" \
       || cl='{"transient":false,"retry_safe":false,"fact":null,"class":"unknown","reason":"classify-failure.py failed on the trace"}'
   else
     err "trace of job $id ($name) could not be fetched: $(redact <"$TMP/trace-$id.err" | tr '\n' ' ')"
