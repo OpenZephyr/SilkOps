@@ -75,6 +75,7 @@ require_project "$PROJECT"
 [ -z "$MR" ] || [[ "$MR" =~ ^[0-9]+$ ]] || usage "--mr must be a number"
 [ -z "$PIPE" ] || [[ "$PIPE" =~ ^[0-9]+$ ]] || usage "--pipeline must be a number"
 [[ "$WAIT" =~ ^[0-9]+$ ]] || usage "--wait must be a number of seconds"
+[ -z "$SHA" ] || [[ "$SHA" =~ ^[0-9a-f]{7,40}$ ]] || usage "--sha must be 7 to 40 hex characters"
 [[ "$INTERVAL" =~ ^[1-9][0-9]*$ ]] || usage "--interval must be a positive number of seconds"
 if [ "$NOTE" = true ] && [ -z "$MR" ]; then usage "--note needs --mr (notes are posted on the merge request)"; fi
 require_ci_token   # top level, so the exit-3 JSON and message reach the real streams (the wrappers re-check)
@@ -102,7 +103,8 @@ if [ -n "$MR" ]; then
     # --sha, wait (within the budget) until head_pipeline.sha is the pushed commit.
     if [ -n "$SHA" ]; then
       waited=0
-      while [ "$(printf '%s' "$MRJ" | jq -r '.head_pipeline.sha // ""')" != "$SHA" ]; do
+      # prefix match: git prints abbreviated shas, GitLab reports the full one (#26)
+      while [[ "$(printf '%s' "$MRJ" | jq -r '.head_pipeline.sha // ""')" != "$SHA"* ]]; do
         if [ "$waited" -ge "$WAIT" ]; then
           result "$(jq -cn --argjson iid "$MR" --arg sha "$SHA" --argjson head "$HEAD_ID" --arg hint "watch.sh --project $PROJECT --mr $MR --sha $SHA" \
             '{mr_iid: $iid, still_running: true, waiting_for_sha: $sha, head_pipeline_id: $head, terminal: false, ready: false, resume_hint: $hint}')"
@@ -233,8 +235,10 @@ triage_job() {
     else
       ff=null
     fi
-    cl="$(python3 "$OPS/classify-failure.py" "$tf" 2>/dev/null | redact \
-      | jq -c '{transient, retry_safe, fact, class, reason, step, no_retry_after, marker_hit_before_failure, marker_line_no, failure_line_no, hit_count: (.hits | length), facts_file: (.facts_file | split("/") | last)}')" \
+    local fa=(); local fp
+    while IFS= read -r fp; do fa+=(--facts "$fp"); done < <(facts_paths)
+    cl="$(python3 "$OPS/classify-failure.py" "$tf" "${fa[@]}" 2>/dev/null | redact \
+      | jq -c '{transient, retry_safe, fact, class, reason, step, no_retry_after, marker_hit_before_failure, marker_line_no, failure_line_no, hit_count: (.hits | length), facts_files: [.facts_file | split(",")[] | split("/") | last]}')" \
       || cl='{"transient":false,"retry_safe":false,"fact":null,"class":"unknown","reason":"classify-failure.py failed on the trace"}'
   else
     err "trace of job $id ($name) could not be fetched: $(redact <"$TMP/trace-$id.err" | tr '\n' ' ')"

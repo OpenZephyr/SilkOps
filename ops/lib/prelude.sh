@@ -4,7 +4,7 @@
 # Sourced, never executed. Provides:
 #   set -euo pipefail, a refusal of shell tracing (set -x would print tokens),
 #   exit-code constants, `err`, `result`, `fail`, `redact`, `require_project`,
-#   `silkops_marker`, `urlenc`, and the provider seam (SILKOPS_PROVIDER=gitlab).
+#   `silkops_marker`, `facts_paths`, `urlenc`, and the provider seam (SILKOPS_PROVIDER=gitlab).
 #
 # Contract: exactly one JSON object on stdout, human text on stderr, fixed exit
 # codes (CLAUDE.md). Tokens come from the environment only and are never
@@ -113,6 +113,19 @@ silkops_marker() {
   local v
   v="$(jq -r .version "$SILKOPS_ROOT/.claude-plugin/plugin.json")"
   printf '<!-- silkops: v=%s plan=%s unit=%s run=%s -->\n' "$v" "$1" "$2" "$3"
+}
+
+# facts_paths — the fact layers, one path per line, most specific first: the consumer
+# repo's .silkops/facts.json (cwd), then $SILKOPS_FACTS_OVERLAY/*.json (default
+# <plugin>/overlay/facts.d, sorted), then the plugin core. classify-failure.py takes
+# them as repeated --facts and an earlier file wins on an overlapping pattern.
+facts_paths() {
+  local ov="${SILKOPS_FACTS_OVERLAY:-$SILKOPS_ROOT/overlay/facts.d}" f
+  [ -f "$PWD/.silkops/facts.json" ] && echo "$PWD/.silkops/facts.json"
+  if [ -d "$ov" ]; then
+    for f in "$ov"/*.json; do [ -f "$f" ] && echo "$f"; done
+  fi
+  echo "$SILKOPS_ROOT/facts/environment.json"
 }
 
 # --- provider seam -----------------------------------------------------------

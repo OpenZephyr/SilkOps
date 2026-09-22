@@ -92,6 +92,11 @@ run_case w17 watch-green -- "${COMMON[@]}" --mr 7 --wait 0 --sha a1b2c3d4e5f6071
 if [ "$(rc_of w17)" = 0 ] && [ "$(out_of w17 | jq -r .ready)" = true ]; then
   pass "W17 --sha matching the head pipeline's commit -> watches it normally (ready:true)"
 else fail "W17" "rc=$(rc_of w17) out=$(out_of w17)"; fi
+run_case w17c watch-green -- "${COMMON[@]}" --mr 7 --wait 0 --sha a1b2c3d
+if [ "$(rc_of w17c)" = 0 ] && [ "$(out_of w17c | jq -r .ready)" = true ] && [ "$(out_of w17c | jq -r .still_running)" = false ]; then
+  pass "W17c (#26) an abbreviated --sha that prefixes the head pipeline's commit matches"
+else fail "W17c" "rc=$(rc_of w17c) out=$(out_of w17c | head -c 400)"; fi
+
 run_case w17b watch-green -- "${COMMON[@]}" --mr 7 --wait 0 --sha deadbeefdeadbeefdeadbeefdeadbeefdeadbeef
 if [ "$(rc_of w17b)" = 0 ] && [ "$(out_of w17b | jq -r .still_running)" = true ] && [ "$(out_of w17b | jq -r .waiting_for_sha)" = deadbeefdeadbeefdeadbeefdeadbeefdeadbeef ] && [ "$(out_of w17b | jq -r .resume_hint)" != null ]; then
   pass "W17b --sha not yet the head pipeline's commit, budget spent -> still_running with waiting_for_sha and a resume hint, no retry"
@@ -342,6 +347,19 @@ if command -v shellcheck >/dev/null 2>&1; then
   if shellcheck -x -P SCRIPTDIR "$ROOT/ops/watch.sh" >"$SCRATCH/shellcheck.log" 2>&1; then pass "L3 shellcheck clean: ops/watch.sh"
   else fail "L3" "$(cat "$SCRATCH/shellcheck.log")"; fi
 fi
+
+# --- U1 (v0.2): an overlay fact overlapping a core pattern wins, and the JSON names every facts file
+mkdir -p "$SCRATCH/ov"
+cat >"$SCRATCH/ov/hub.json" <<'EOF'
+{"schema_version":"1","facts":[{"id":"overlay-hub-outage","pattern":"502 Bad Gateway","explanation":"overlay says: hub is down for the day","class":"permanent","retry_safe":false,"step":"scan-image","source":"overlay"}]}
+EOF
+run_case w30 watch-failed-transient SILKOPS_FACTS_OVERLAY="$SCRATCH/ov" -- "${COMMON[@]}" --mr 7 --wait 0
+if [ "$(rc_of w30)" = 0 ] && out_of w30 | jq -e '.failed[0].classification.fact == "overlay-hub-outage"
+      and .failed[0].classification.retry_safe == false
+      and .failed[0].classification.facts_files == ["hub.json", "environment.json"]' >/dev/null \
+  && [ "$(retries_of w30)" = 0 ]; then
+  pass "W30 (U1) overlay fact wins over the core docker-hub-502 pattern; no retry; facts_files lists overlay then core"
+else fail "W30" "rc=$(rc_of w30) out=$(out_of w30 | head -c 1500) err=$(err_of w30 | tail -3)"; fi
 
 echo "test-watch: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

@@ -264,3 +264,34 @@ class UntrustedDeclaration(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FactLayers(unittest.TestCase):
+    """Facts come from several files (repo, overlay, core); the earlier `--facts` wins on
+    an overlapping pattern. Guards the merge order of the split, not just single-file order."""
+
+    DNS_LINE = "fatal: unable to access 'https://gitlab.com/x.git/': Could not resolve host: gitlab.com\nERROR: Job failed: exit code 1\n"
+
+    def _facts(self, d, name, fid, cls, safe):
+        path = os.path.join(d, name)
+        with open(path, "w") as f:
+            _json.dump({"schema_version": "1", "facts": [{
+                "id": fid, "pattern": r"Could not resolve host", "explanation": fid,
+                "class": cls, "retry_safe": safe, "step": "s", "source": name}]}, f)
+        return path
+
+    def test_earlier_facts_file_wins_on_overlap(self):
+        with tempfile.TemporaryDirectory() as d:
+            repo = self._facts(d, "repo.json", "gke-dns-networkpolicy", "permanent", False)
+            core = self._facts(d, "core.json", "dind-service-dns", "transient", True)
+            tr = os.path.join(d, "t.log")
+            with open(tr, "w") as f:
+                f.write(self.DNS_LINE)
+            rc, out, err = run("classify-failure.py", tr, "--facts", repo, "--facts", core)
+            self.assertEqual(rc, 0, err)
+            self.assertEqual(out["fact"], "gke-dns-networkpolicy")
+            self.assertFalse(out["retry_safe"])
+            rc, out, err = run("classify-failure.py", tr, "--facts", core, "--facts", repo)
+            self.assertEqual(rc, 0, err)
+            self.assertEqual(out["fact"], "dind-service-dns")
+            self.assertTrue(out["retry_safe"])

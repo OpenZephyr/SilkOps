@@ -5,7 +5,10 @@ U4 of the silkOps harness plan; implements KTD6 (retry semantics, the
 `silkops: no-retry-after=<pattern>` declaration) over KTD7 (one facts file feeds the
 runbook and this matcher). Stdlib only; Python 3.9.
 
-Usage: classify-failure.py <trace|-> [--facts facts/environment.json] [--strict]
+Usage: classify-failure.py <trace|-> [--facts FILE ...] [--strict]
+
+`--facts` repeats; files are searched in the order given (repo, overlay, core), so an
+earlier file wins on an overlapping pattern. Default: facts/environment.json alone.
 
 Each fact in facts/environment.json carries `id, pattern (Python regex applied to the
 cleaned trace lines), explanation, class (transient|permanent), retry_safe, step, source`.
@@ -200,13 +203,15 @@ def classify(lines, facts, facts_path):
 def main(argv):
     p = Parser(prog="classify-failure.py", description="transient/retry-safety classifier (silkOps U4)")
     p.add_argument("trace", help="trace file, or - for stdin")
-    p.add_argument("--facts", default=DEFAULT_FACTS, help="facts file (default facts/environment.json)")
+    p.add_argument("--facts", action="append", metavar="FILE",
+                   help="facts file, repeatable; earlier files win (default facts/environment.json)")
     p.add_argument("--strict", action="store_true", help="exit 6 when retry is unsafe")
     args = p.parse_args(argv)
 
-    facts = load_facts(args.facts)
+    paths = args.facts or [DEFAULT_FACTS]
+    facts = [f for path in paths for f in load_facts(path)]
     raw = T.read_trace(args.trace)
-    out = classify(T.split_lines(raw), facts, args.facts)
+    out = classify(T.split_lines(raw), facts, ",".join(paths))
     out["source"] = args.trace
     err("%s: class=%s retry_safe=%s" % (out["fact"] or "unknown", out["class"], out["retry_safe"]))
     emit(out)

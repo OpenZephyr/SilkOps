@@ -31,6 +31,31 @@ class Runbook(unittest.TestCase):
             self.assertEqual(r.returncode, 1)
             self.assertEqual(json.loads(r.stdout)["error"], "runbook_stale")
 
+    def test_facts_layers_render_in_order_and_default_is_core_only(self):
+        with tempfile.TemporaryDirectory() as d:
+            for sub in ("facts", "references"):
+                os.makedirs(os.path.join(d, sub))
+            fact = lambda i: {"id": i, "pattern": i, "explanation": "e-" + i, "class": "permanent",
+                              "retry_safe": False, "step": "s", "source": "src"}
+            json.dump({"schema_version": "1", "facts": [fact("core-only")]},
+                      open(os.path.join(d, "facts", "environment.json"), "w"))
+            repo = os.path.join(d, "repo.json")
+            json.dump({"schema_version": "1", "facts": [fact("repo-fact")]}, open(repo, "w"))
+            open(os.path.join(d, "references", "runbook.template.md"), "w").write("# t\n{{FACTS}}\n")
+            out = os.path.join(d, "references", "runbook.md")
+            r = subprocess.run([sys.executable, SCRIPT, "--root", d], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            text = open(out).read()
+            self.assertIn("### `core-only`", text)
+            self.assertNotIn("repo-fact", text)
+            r = subprocess.run([sys.executable, SCRIPT, "--root", d, "--facts", repo,
+                                "--facts", os.path.join(d, "facts", "environment.json")],
+                               capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            text = open(out).read()
+            self.assertLess(text.index("### `repo-fact`"), text.index("### `core-only`"))
+            self.assertEqual(json.loads(r.stdout)["facts"], 2)
+
     def test_snippet_matches_ci_cd_claude_md_block(self):
         snippet = open(os.path.join(ROOT, "references", "claude-md-snippet.md")).read()
         self.assertIn("`ship-mr`", snippet)
