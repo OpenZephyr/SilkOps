@@ -21,7 +21,7 @@ Trace shape (GitLab SaaS, runner >= 17): every physical line is
   script command as `$ <command>` (green ANSI). Without per-line timestamps only the
   section epochs carry time, so steps have no duration and `timing` says so.
 
-Contract: one JSON object on stdout, human text on stderr. Exit codes (CLAUDE.md):
+Contract: one JSON object on stdout, human text on stderr. Exit codes (AGENTS.md):
 0 ok · 2 usage · 5 file not found · 1 other.
 """
 

@@ -1,3 +1,3 @@
 # references
 
-Runbook and the CLAUDE.md snippet consumer repos add.
+Runbook template (rendered by CI) and the neutral AGENTS.md block consumer repos add.

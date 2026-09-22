@@ -17,7 +17,7 @@ operator authors the MR). **This skill never merges.** It stops at "ready"; a hu
   remote (`git remote get-url origin`), then state it in every `ops/` call; never let a script
   infer it from the cwd.
 - `--plan <plan-path>` — the plan whose units describe this branch (default: the plan named in
-  the repo's `CLAUDE.md`, else ask). `--draft` marks the MR draft. `--target <branch>` defaults
+  the repo's `AGENTS.md`, else ask). `--draft` marks the MR draft. `--target <branch>` defaults
   to the repo's default branch (`glab api projects/<urlenc> | jq -r .default_branch`).
 - Issue numbers the user names ("closes #12 and #14") become `Closes #n` lines.
 
