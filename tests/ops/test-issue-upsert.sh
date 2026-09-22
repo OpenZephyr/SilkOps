@@ -132,5 +132,13 @@ if [ "$(rc_of u17)" = 0 ] && out_of u17 | jq -e '.action == "created" and .ident
   pass "U17 marker off: created verbatim, u4 label carries the identity, nothing names the harness"
 else fail "U17" "rc=$(rc_of u17) out=$(out_of u17) body=$(body_of u17 1 2>/dev/null)"; fi
 
+# --- v0.2 U9 (#34): assignee and due date on create, reported as read back
+run_case u18 upsert-notfound -- --project "$PROJECT" "${ARGS[@]}" --assignee aqua --due-date 2026-10-01
+if [ "$(rc_of u18)" = 0 ] && out_of u18 | jq -e '.action == "created" and (.assignee == "aqua" or .assignee == null) and has("due_date")' >/dev/null \
+  && log_of u18 | grep -E -- 'users\?username=aqua' >/dev/null \
+  && body_of u18 1 | jq -e '.body.assignee_ids == [42] and .body.due_date == "2026-10-01"' >/dev/null; then
+  pass "U18 --assignee resolves the username to an id, --due-date is sent; both are in the result"
+else fail "U18" "rc=$(rc_of u18) out=$(out_of u18) body=$(body_of u18 1 2>/dev/null) log=$(log_of u18 | tr '\n' ';')"; fi
+
 echo "test-issue-upsert: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

@@ -22,9 +22,9 @@ set -euo pipefail
 # shellcheck source=lib/glab.sh
 . "$(dirname "$0")/lib/glab.sh"
 
-usage() { fail "$EX_USAGE" usage "usage: milestone-upsert.sh --project <group/project> --title <t> --plan <basename> --run <id> [--description-file <f>] [--marker-unit <unit>] [--dry-run]${1:+ — $1}"; }
+usage() { fail "$EX_USAGE" usage "usage: milestone-upsert.sh --project <group/project> --title <t> --plan <basename> --run <id> [--description-file <f>] [--marker-unit <unit>] [--due-date YYYY-MM-DD] [--start-date YYYY-MM-DD] [--dry-run]${1:+ — $1}"; }
 
-PROJECT=""; TITLE=""; PLAN=""; RUN=""; UNIT="milestone"; DESC_FILE=""; DRY=false
+PROJECT=""; TITLE=""; PLAN=""; RUN=""; UNIT="milestone"; DESC_FILE=""; DRY=false; DUE=""; START=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --project) [ $# -ge 2 ] || usage "--project needs a value"; PROJECT="$2"; shift 2 ;;
@@ -34,6 +34,8 @@ while [ $# -gt 0 ]; do
     --run) [ $# -ge 2 ] || usage; RUN="$2"; shift 2 ;;
     --marker-unit) [ $# -ge 2 ] || usage; UNIT="$2"; shift 2 ;;
     --description-file) [ $# -ge 2 ] || usage; DESC_FILE="$2"; shift 2 ;;
+    --due-date) [ $# -ge 2 ] || usage; DUE="$2"; shift 2 ;;       # YYYY-MM-DD (v0.2 U9, #34)
+    --start-date) [ $# -ge 2 ] || usage; START="$2"; shift 2 ;;
     --dry-run) DRY=true; shift ;;
     -h|--help) usage ;;
     *) usage "unknown argument: $1" ;;
@@ -47,6 +49,9 @@ if [ -n "$DESC_FILE" ]; then [ -f "$DESC_FILE" ] || usage "--description-file mu
 require_ci_token   # top level, so the exit-3 JSON and message reach the real streams (the wrappers re-check)
 
 ENC="$(urlenc "$PROJECT")"
+for d in "$DUE" "$START"; do [ -z "$d" ] || [[ "$d" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || usage "dates must be YYYY-MM-DD"; done
+EXTRA="$(jq -cn --arg d "$DUE" --arg s "$START" '(if $d != "" then {due_date: $d} else {} end) + (if $s != "" then {start_date: $s} else {} end)')"
+read_back() { printf '%s' "$1" | jq -c '{due_date: (.due_date // null), start_date: (.start_date // null)}'; }
 MARKER="$(silkops_marker "$PLAN" "$UNIT" "$RUN")"; MARKER="${MARKER%$'\n'}"
 BODY=""; [ -n "$DESC_FILE" ] && BODY="$(cat "$DESC_FILE")"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/silkops-milestone.XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
@@ -74,10 +79,10 @@ if [ "$FOUND" != null ]; then
     result "$(jq -cn --argjson i "$IDENT" --argjson f "$FOUND" --argjson p "$PLANNED" '$i + {dry_run: true, action: "updated", current: {description: ($f.description // "")}, proposed: {description: $p.description}}')"
     exit 0
   fi
-  printf '%s' "$PLANNED" | jq -c '{description: .description}' >"$TMP/body.json"
+  printf '%s' "$PLANNED" | jq -c --argjson extra "$EXTRA" '{description: .description} + $extra' >"$TMP/body.json"
   MID="$(printf '%s' "$FOUND" | jq -r '.id')"
   RESP="$(glab_ro api -X PUT "projects/$ENC/milestones/$MID" --input "$TMP/body.json")" || fail "$EX_OTHER" update_failed "could not update milestone '$TITLE' (id $MID)" "$IDENT"
-  result "$(jq -cn --argjson i "$IDENT" --argjson r "$RESP" --argjson f "$FOUND" '$i + {action: "updated", web_url: ($r.web_url // $i.web_url), prior: {description: ($f.description // "")}}')"
+  result "$(jq -cn --argjson i "$IDENT" --argjson r "$RESP" --argjson f "$FOUND" --argjson rb "$(read_back "$RESP")" '$i + {action: "updated", web_url: ($r.web_url // $i.web_url), prior: {description: ($f.description // "")}} + $rb')"
   exit 0
 fi
 
@@ -87,6 +92,6 @@ if [ "$DRY" = true ]; then
   result "$(jq -cn --arg t "$TITLE" --arg d "$DESC" '{dry_run: true, action: "created", current: null, proposed: {title: $t, description: $d}}')"
   exit 0
 fi
-jq -cn --arg t "$TITLE" --arg d "$DESC" '{title: $t, description: $d}' >"$TMP/body.json"
+jq -cn --arg t "$TITLE" --arg d "$DESC" --argjson extra "$EXTRA" '{title: $t, description: $d} + $extra' >"$TMP/body.json"
 RESP="$(glab_ro api -X POST "projects/$ENC/milestones" --input "$TMP/body.json")" || fail "$EX_OTHER" create_failed "could not create milestone '$TITLE' in $PROJECT"
-result "$(printf '%s' "$RESP" | jq -c '{action: "created", id: .id, iid: .iid, web_url: (.web_url // null), title: .title, state: (.state // null)}')"
+result "$(printf '%s' "$RESP" | jq -c --argjson rb "$(read_back "$RESP")" '{action: "created", id: .id, iid: .iid, web_url: (.web_url // null), title: .title, state: (.state // null)} + $rb')"

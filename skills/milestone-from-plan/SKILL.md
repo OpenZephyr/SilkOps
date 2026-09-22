@@ -11,7 +11,7 @@ unit, dependency-linked, marker-identified, and re-syncable. Every write goes th
 `${CLAUDE_PLUGIN_ROOT}/ops/`; this skill performs no settings writes and never edits a
 closed issue.
 
-**Read `references/issue-body.md` before Step 3.**
+The issue body shape is `references/issue-body.md`; `milestone-sync.sh` renders it.
 
 ## Inputs
 
@@ -22,33 +22,20 @@ closed issue.
 
 ## Procedure
 
-1. **Parse the plan.** `python3 ${CLAUDE_PLUGIN_ROOT}/ops/plan-units.py <plan-path>` → units
-   with `id`, `title`, `goal`, `requirements`, `depends_on`, `files`, `verification`. Stop with
-   the parser's message if it reports zero units or warnings about the Unit Index.
-2. **Find or create the milestone.** `${CLAUDE_PLUGIN_ROOT}/ops/milestone-upsert.sh --project P
-   --title <title> --plan <basename> --run <run-id> [--description-file <f>]` — first with
-   `--dry-run` to show current vs proposed, then for real. It matches the exact title, creates
-   the milestone when absent (description = marker `unit=milestone` + managed region wrapping
-   the file), re-syncs only the managed region when it exists, and reports `action`
-   (created|updated|unchanged) with `id`, `iid`, `web_url`. A closed milestone of that title
-   exits 7: stop and ask, do not create a look-alike. Pass `iid`/`title` on to Step 3. The run
-   id is a short timestamp-based id you generate once per invocation.
-3. **Upsert one issue per unit** (dependency order is irrelevant here):
-   `ops/issue-upsert.sh --project P --marker-unit U<N> --plan <basename> --run <run-id>
-   --title "U<N> — <unit title>" --body-file <rendered body> --milestone <title> --labels u<N>,silkops`.
-   Body per `references/issue-body.md`: goal, requirements, files, verification, all inside the
-   managed region. Collect `iid` per unit from each result; `action` tells you
-   created/updated/unchanged.
-4. **Link dependencies (second pass).** For each `depends_on` edge, `ops/issue-link.sh
-   --project P --source <dep iid> --target <unit iid> --type blocks`. When the result carries
-   `fallback: relates_to`, append its `depends_on_line` inside the managed region of the
-   dependent issue and re-run the upsert for that unit (one extra write, idempotent).
-5. **Re-sync semantics.** On a later run against a changed plan: units still present are
-   upserted (only the managed region changes; human text outside it survives); a unit that
-   disappeared → if its issue is open, post a note via `ops/note.sh` naming the plan file's
-   git SHA and close it (`glab issue close <iid> -R P`); if it is already closed, post the
-   note only. Never reopen. A run with no plan changes performs zero writes and says so.
-6. **Report** a table: unit → issue iid → action → blocked-by. Name the milestone URL.
+1. **One call.** `${CLAUDE_PLUGIN_ROOT}/ops/milestone-sync.sh --project P --plan <plan-path>
+   --run <run-id> [--milestone <title>] --dry-run` first: read the report (milestone action,
+   unit → iid → action, links), then run it again without `--dry-run`. It parses the units,
+   upserts the milestone and every issue, links every `depends_on` edge as `blocks`, and returns
+   one JSON report. Never loop over units in the session; the script owns the loop.
+2. **Read the report.** `milestone.action`, `issues[] {unit, iid, action, blocked_by}`,
+   `links[] {source_iid, target_iid, link_type, existing, fallback}`. A `fallback: relates_to`
+   means the project has no blocking links; say so. A closed milestone or issue exits 7: stop
+   and ask, never create a look-alike.
+3. **Re-sync.** Run the same call after the plan changes: only managed regions change, human
+   text survives, an unchanged plan performs zero writes. A unit that disappeared from the
+   plan: post a note with `ops/note.sh` naming the plan's git SHA and close the issue with
+   `glab issue close <iid> -R P` if open; never reopen.
+4. **Report** the milestone URL and the unit → iid → action table from the JSON, nothing more.
 
 ## Guardrails
 

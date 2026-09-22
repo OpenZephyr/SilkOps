@@ -80,5 +80,12 @@ if [ "$(rc_of m8)" = 3 ] && out_of m8 | jq -e '.ok == false and .error == "no_to
   pass "M8 CI without SILKOPS_CI_TOKEN -> exit 3 no_token before any glab call"
 else fail "M8" "rc=$(rc_of m8) out=$(out_of m8) calls=$(calls_of m8)"; fi
 
+# --- v0.2 U9 (#34): due and start dates on create
+run_case m9 milestone -- --project "$PROJECT" "${ARGS[@]}" --due-date 2026-12-31 --start-date 2026-10-01
+if [ "$(rc_of m9)" = 0 ] && out_of m9 | jq -e '.action == "created" and has("due_date") and has("start_date")' >/dev/null \
+  && body_of m9 1 | jq -e '.body.due_date == "2026-12-31" and .body.start_date == "2026-10-01"' >/dev/null; then
+  pass "M9 --due-date and --start-date are sent on create and reported"
+else fail "M9" "rc=$(rc_of m9) out=$(out_of m9) body=$(body_of m9 1 2>/dev/null)"; fi
+
 echo "test-milestone-upsert: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]
