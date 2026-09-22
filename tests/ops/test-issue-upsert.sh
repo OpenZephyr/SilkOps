@@ -112,5 +112,25 @@ if [ "$(rc_of u14)" = 7 ] && out_of u14 | jq -e '.error == "ambiguous_identity" 
   pass "U14 two open marker matches -> exit 7 ambiguous_identity, zero writes"
 else fail "U14" "rc=$(rc_of u14) out=$(out_of u14) writes=$(writes_of u14)"; fi
 
+# --- v0.2 U5 (#39): SILKOPS_MARKER=off — identity by label only; --milestone re-sync refused
+run_case u15 upsert-open SILKOPS_MARKER=off -- --project "$PROJECT" "${ARGS[@]}" --milestone "Harness v0.1"
+if [ "$(rc_of u15)" = 7 ] && out_of u15 | jq -e '.ok == false and .error == "refused"' >/dev/null && [ "$(writes_of u15)" = 0 ]; then
+  pass "U15 marker off with --milestone -> exit 7 refused (label identity is too weak for a milestone re-sync), zero writes"
+else fail "U15" "rc=$(rc_of u15) out=$(out_of u15) writes=$(writes_of u15)"; fi
+
+run_case u16 upsert-foreign-plan SILKOPS_MARKER=off -- --project "$PROJECT" "${ARGS[@]}"
+if [ "$(rc_of u16)" = 0 ] && out_of u16 | jq -e '.action == "updated" and .iid == 21 and .identity == "label" and .marker == false' >/dev/null \
+  && [ "$(writes_of u16)" = 1 ] && body_of u16 1 | jq -e '.body.description == "new body line\n"' >/dev/null \
+  && ! log_of u16 | grep -F 'in=description' >/dev/null; then
+  pass "U16 marker off: no marker search, the marker-less u4 issue (#21) is adopted and its description replaced verbatim"
+else fail "U16" "rc=$(rc_of u16) out=$(out_of u16) body=$(body_of u16 1 2>/dev/null) log=$(log_of u16 | tr '\n' ';')"; fi
+
+run_case u17 upsert-notfound SILKOPS_MARKER=off -- --project "$PROJECT" "${ARGS[@]}"
+if [ "$(rc_of u17)" = 0 ] && out_of u17 | jq -e '.action == "created" and .identity == "label" and .marker == false' >/dev/null \
+  && body_of u17 1 | jq -e '.body.description == "new body line\n" and (.body.labels | contains("u4"))' >/dev/null \
+  && ! body_of u17 1 | jq -r '.body.description' | grep -i silkops >/dev/null; then
+  pass "U17 marker off: created verbatim, u4 label carries the identity, nothing names the harness"
+else fail "U17" "rc=$(rc_of u17) out=$(out_of u17) body=$(body_of u17 1 2>/dev/null)"; fi
+
 echo "test-issue-upsert: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

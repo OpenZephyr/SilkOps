@@ -29,7 +29,7 @@ operator authors the MR). **This skill never merges.** It stops at "ready"; a hu
    the report and carry on — stop only when a listed path is one the change needs (a file the
    plan unit names, or one the branch already touches), because then the push would ship an
    incomplete change. Never `git add -A` / `git add .` here; this skill does not commit at all
-   (use the commit skill first).
+   (the `commit` skill does, by named path, before this one runs).
 2. **Push.** `git push -u origin HEAD`. A rejected push (non-fast-forward) is reported, not
    forced: never `--force` from this skill.
 3. **Build the description from the plan.** `python3 ${CLAUDE_PLUGIN_ROOT}/ops/plan-units.py
@@ -61,6 +61,12 @@ operator authors the MR). **This skill never merges.** It stops at "ready"; a hu
 6. **Print the MR URL and hand off.** Invoke `watch-pipeline` with the `iid` and the same
    `--project`. `watch-pipeline` reports "ready, not merging — a human merges" or the triage;
    this skill has nothing more to do after that.
+
+## Disclosure
+
+- On a project outside the operator's own group (`token-check.sh` reports the group), run every
+  write with `SILKOPS_MARKER=off`: the MR is then found by branch, its description is the file
+  verbatim, and nothing on the host names the harness. The result says `identity: branch`.
 
 ## Guardrails
 

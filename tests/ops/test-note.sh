@@ -52,5 +52,17 @@ if [ "$(rc_of n8)" = 3 ] && out_of n8 | jq -e '.error == "no_token"' >/dev/null 
   pass "N8 CI without SILKOPS_CI_TOKEN -> visible exit 3 (JSON + message), zero glab calls"
 else fail "N8" "rc=$(rc_of n8) out=$(out_of n8) err=$(err_of n8 | tail -1)"; fi
 
+# --- v0.2 U5 (#39): SILKOPS_MARKER=off — no marker line; dedupe by a neutral key comment
+run_case n6 note SILKOPS_MARKER=off -- --project "$PROJECT" --issue 12 "${ARGS[@]}" --dedupe-key verify-2
+if [ "$(rc_of n6)" = 0 ] && out_of n6 | jq -e '.existing == false and .marker == false' >/dev/null \
+  && body_of n6 1 | jq -e '.body.body == "<!-- note-key=verify-2 -->\nVerification passed.\n"' >/dev/null; then
+  pass "N6 marker off: body is a neutral key line plus the file, nothing names the harness"
+else fail "N6" "rc=$(rc_of n6) out=$(out_of n6) body=$(body_of n6 1 2>/dev/null)"; fi
+
+run_case n7 note SILKOPS_MARKER=off -- --project "$PROJECT" --mr 7 "${ARGS[@]}"
+if [ "$(rc_of n7)" = 0 ] && body_of n7 1 | jq -e '.body.body == "Verification passed.\n"' >/dev/null; then
+  pass "N7 marker off without a key: the file verbatim"
+else fail "N7" "rc=$(rc_of n7) body=$(body_of n7 1 2>/dev/null)"; fi
+
 echo "test-note: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

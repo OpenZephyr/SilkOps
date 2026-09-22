@@ -115,6 +115,11 @@ silkops_marker() {
   printf '<!-- silkops: v=%s plan=%s unit=%s run=%s -->\n' "$v" "$1" "$2" "$3"
 }
 
+# marker_enabled — provenance markers are on unless SILKOPS_MARKER=off (v0.2 KD6, #39):
+# the operator decides disclosure; off is the default for projects outside the operator's
+# group. Write scripts then fall back to branch / label / key identity and say so.
+marker_enabled() { [ "${SILKOPS_MARKER:-on}" != off ]; }
+
 # facts_paths — the fact layers, one path per line, most specific first: the consumer
 # repo's .silkops/facts.json (cwd), then $SILKOPS_FACTS_OVERLAY/*.json (default
 # <plugin>/overlay/facts.d, sorted), then the plugin core. classify-failure.py takes

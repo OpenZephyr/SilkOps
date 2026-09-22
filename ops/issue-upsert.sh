@@ -51,6 +51,14 @@ require_ci_token   # top level, so the exit-3 JSON and message reach the real st
 ENC="$(urlenc "$PROJECT")"
 MARKER="$(silkops_marker "$PLAN" "$UNIT" "$RUN")"; MARKER="${MARKER%$'\n'}"
 BODY="$(cat "$BODY_FILE")"
+# SILKOPS_MARKER=off (KTD3): identity is the u<N> label alone, so a --milestone re-sync,
+# where two plans' units share a label, is refused rather than guessed; the description is
+# the body verbatim and a re-sync replaces all of it.
+if marker_enabled; then MARKER_ON=true; else MARKER_ON=false; fi
+if [ "$MARKER_ON" = false ] && [ -n "$MILESTONE" ]; then
+  fail "$EX_REFUSED" refused "SILKOPS_MARKER=off leaves only the label as identity; a --milestone re-sync is refused (set the marker on, or sync without --milestone)"
+fi
+IDENTITY=marker; [ "$MARKER_ON" = true ] || IDENTITY=label
 ULABEL="$(printf '%s' "$UNIT" | tr '[:upper:]' '[:lower:]')"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/silkops-upsert.XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
 
@@ -78,6 +86,8 @@ if [ -n "$MILESTONE" ]; then
 fi
 
 # --- find: marker first, then label u<N> ------------------------------------
+CANDS='[]'
+if [ "$MARKER_ON" = true ]; then
 SEARCH="$(urlenc "plan=$PLAN unit=$UNIT")"
 lookup "search $PROJECT issues for the marker plan=$PLAN unit=$UNIT" "projects/$ENC/issues?search=$SEARCH&in=description&state=all&scope=all&per_page=100" "$TMP/by-marker.json"
 # Whole-line marker matches; open ones first. Two open matches → nobody can say which is the
@@ -85,6 +95,7 @@ lookup "search $PROJECT issues for the marker plan=$PLAN unit=$UNIT" "projects/$
 CANDS="$(jq -c --arg p "$PLAN" --arg u "$UNIT" "$JQ_DEFS"'
   [.[] | select(marker_line("^<!-- silkops: v=[^ ]+ plan=\($p | rq) unit=\($u | rq) run=[^ ]+ -->$"))]
   | if any(.state == "opened") then map(select(.state == "opened")) else . end' "$TMP/by-marker.json")"
+fi
 # ambiguous <message-prefix> — exit 7 naming every candidate iid.
 ambiguous() {
   local iids extra
@@ -113,12 +124,16 @@ if [ "$FOUND" != null ]; then
   IID="$(printf '%s' "$FOUND" | jq -r '.iid')"
   STATE="$(printf '%s' "$FOUND" | jq -r '.state')"
   WEB="$(printf '%s' "$FOUND" | jq -r '.web_url // ""')"
-  IDENT="$(jq -cn --argjson iid "$IID" --arg w "$WEB" '{iid: $iid, web_url: $w}')"
+  IDENT="$(jq -cn --argjson iid "$IID" --arg w "$WEB" --arg id "$IDENTITY" --argjson m "$MARKER_ON" '{iid: $iid, web_url: $w, identity: $id, marker: $m}')"
   [ "$STATE" != closed ] || fail "$EX_REFUSED" closed_issue "issue #$IID is closed; the harness never edits or reopens a closed issue (KTD5)" "$IDENT"
 
   # New description: only the managed region changes; the marker's run= is refreshed.
   # Without a region (found by label, written by a human), append marker + region.
-  PLANNED="$(managed_region_plan "$FOUND" "$BODY" "$MARKER" "$RUN")"
+  if [ "$MARKER_ON" = true ]; then
+    PLANNED="$(managed_region_plan "$FOUND" "$BODY" "$MARKER" "$RUN")"
+  else
+    PLANNED="$(jq -cn --argjson f "$FOUND" --arg b "$BODY"$'\n' '{had_region: false, changed: (($f.description // "") != $b), description: $b}')"
+  fi
   if [ "$(printf '%s' "$PLANNED" | jq -r '.changed')" = false ]; then
     result "$(jq -cn --argjson i "$IDENT" '$i + {action: "unchanged"}')"
     exit 0
@@ -135,7 +150,11 @@ if [ "$FOUND" != null ]; then
 fi
 
 # --- create -----------------------------------------------------------------
-DESC="$(jq -rn --arg marker "$MARKER" --arg body "$BODY" '$marker + "\n<!-- silkops:managed -->\n" + $body + "\n<!-- /silkops:managed -->\n"')"
+if [ "$MARKER_ON" = true ]; then
+  DESC="$(jq -rn --arg marker "$MARKER" --arg body "$BODY" '$marker + "\n<!-- silkops:managed -->\n" + $body + "\n<!-- /silkops:managed -->\n"')"
+else
+  DESC="$BODY"$'\n'
+fi
 ALL_LABELS="$(jq -rn --arg l "$LABELS" --arg u "$ULABEL" '($l | split(",") | map(select(. != ""))) as $a | (if ($a | index($u)) == null then $a + [$u] else $a end) | join(",")')"
 if [ "$DRY" = true ]; then
   result "$(jq -cn --arg t "$TITLE" --arg d "$DESC" --arg l "$ALL_LABELS" --argjson ms "$MILESTONE_ID" '{dry_run: true, action: "created", current: null, proposed: {title: $t, description: $d, labels: $l, milestone_id: $ms}}')"
@@ -144,4 +163,4 @@ fi
 jq -cn --arg t "$TITLE" --arg d "$DESC" --arg l "$ALL_LABELS" --argjson ms "$MILESTONE_ID" \
   '{title: $t, description: $d, labels: $l} + (if $ms != null then {milestone_id: $ms} else {} end)' >"$TMP/body.json"
 RESP="$(glab_ro api -X POST "projects/$ENC/issues" --input "$TMP/body.json")" || fail "$EX_OTHER" create_failed "could not create the issue in $PROJECT"
-result "$(printf '%s' "$RESP" | jq -c '{action: "created", iid: .iid, web_url: .web_url, state: .state}')"
+result "$(printf '%s' "$RESP" | jq -c --arg id "$IDENTITY" --argjson m "$MARKER_ON" '{action: "created", iid: .iid, web_url: .web_url, state: .state, identity: $id, marker: $m}')"

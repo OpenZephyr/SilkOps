@@ -48,6 +48,9 @@ require_ci_token   # top level, so the exit-3 JSON and message reach the real st
 ENC="$(urlenc "$PROJECT")"
 MARKER="$(silkops_marker "$PLAN" "$UNIT" "$RUN")"; MARKER="${MARKER%$'\n'}"
 BODY="$(cat "$DESC_FILE")"
+# SILKOPS_MARKER=off: identity is the source branch only, the description is the body
+# verbatim, and a re-sync replaces the whole description (KTD3); the result says so.
+if marker_enabled; then MARKER_ON=true; else MARKER_ON=false; fi
 if [ "$DRAFT" = true ]; then case "$TITLE" in "Draft: "*) ;; *) TITLE="Draft: $TITLE" ;; esac; fi
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/silkops-mr.XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
 
@@ -69,8 +72,12 @@ head_pipeline_of() {
 if [ "$FOUND" != null ]; then
   IID="$(printf '%s' "$FOUND" | jq -r '.iid')"
   WEB="$(printf '%s' "$FOUND" | jq -r '.web_url // ""')"
-  IDENT="$(jq -cn --argjson iid "$IID" --arg w "$WEB" --arg s "$SRC" --arg t "$TGT" '{iid: $iid, web_url: $w, source_branch: $s, target_branch: $t}')"
-  PLANNED="$(managed_region_plan "$FOUND" "$BODY" "$MARKER" "$RUN")"
+  IDENT="$(jq -cn --argjson iid "$IID" --arg w "$WEB" --arg s "$SRC" --arg t "$TGT" --argjson m "$MARKER_ON" '{iid: $iid, web_url: $w, source_branch: $s, target_branch: $t, identity: "branch", marker: $m}')"
+  if [ "$MARKER_ON" = true ]; then
+    PLANNED="$(managed_region_plan "$FOUND" "$BODY" "$MARKER" "$RUN")"
+  else
+    PLANNED="$(jq -cn --argjson f "$FOUND" --arg b "$BODY"$'\n' '{had_region: false, changed: (($f.description // "") != $b), description: $b}')"
+  fi
   HP="$(head_pipeline_of "$IID" "$FOUND")"
   if [ "$(printf '%s' "$PLANNED" | jq -r '.changed')" = false ]; then
     result "$(jq -cn --argjson i "$IDENT" --argjson hp "$HP" '$i + {action: "unchanged", head_pipeline_id: $hp}')"
@@ -86,13 +93,17 @@ if [ "$FOUND" != null ]; then
   exit 0
 fi
 
-DESC="$(jq -rn --arg marker "$MARKER" --arg body "$BODY" '$marker + "\n<!-- silkops:managed -->\n" + $body + "\n<!-- /silkops:managed -->\n"')"
+if [ "$MARKER_ON" = true ]; then
+  DESC="$(jq -rn --arg marker "$MARKER" --arg body "$BODY" '$marker + "\n<!-- silkops:managed -->\n" + $body + "\n<!-- /silkops:managed -->\n"')"
+else
+  DESC="$BODY"$'\n'
+fi
 if [ "$DRY" = true ]; then
-  result "$(jq -cn --arg s "$SRC" --arg t "$TGT" --arg title "$TITLE" --arg d "$DESC" '{dry_run: true, action: "created", current: null, proposed: {source_branch: $s, target_branch: $t, title: $title, description: $d}}')"
+  result "$(jq -cn --arg s "$SRC" --arg t "$TGT" --arg title "$TITLE" --arg d "$DESC" --argjson m "$MARKER_ON" '{dry_run: true, action: "created", identity: "branch", marker: $m, current: null, proposed: {source_branch: $s, target_branch: $t, title: $title, description: $d}}')"
   exit 0
 fi
 jq -cn --arg s "$SRC" --arg t "$TGT" --arg title "$TITLE" --arg d "$DESC" '{source_branch: $s, target_branch: $t, title: $title, description: $d}' >"$TMP/body.json"
 RESP="$(glab_ro api -X POST "projects/$ENC/merge_requests" --input "$TMP/body.json")" || fail "$EX_OTHER" create_failed "could not create the MR $SRC -> $TGT in $PROJECT"
 IID="$(printf '%s' "$RESP" | jq -r '.iid')"
 HP="$(head_pipeline_of "$IID" "$RESP")"
-result "$(printf '%s' "$RESP" | jq -c --argjson hp "$HP" '{action: "created", iid: .iid, web_url: .web_url, source_branch: .source_branch, target_branch: .target_branch, head_pipeline_id: $hp}')"
+result "$(printf '%s' "$RESP" | jq -c --argjson hp "$HP" --argjson m "$MARKER_ON" '{action: "created", iid: .iid, web_url: .web_url, source_branch: .source_branch, target_branch: .target_branch, head_pipeline_id: $hp, identity: "branch", marker: $m}')"

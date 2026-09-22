@@ -54,5 +54,19 @@ else fail "M7" "rc=$(rc_of m7) out=$(out_of m7) err=$(err_of m7 | tail -1)"; fi
 run_case M8 mr-none -- --project "$PROJECT" --source feat/x --target main --title "t" --description-file "$SCRATCH/desc.md" 2>/dev/null || true
 if log_of M8 | grep -E -- '-X POST' | grep -q 'Content-Type: application/json'; then pass "M8 JSON body carries Content-Type: application/json (GitLab 415 otherwise)"; else fail "M8" "$(log_of M8 | grep -- '-X POST')"; fi
 
+# --- v0.2 U5 (#39): SILKOPS_MARKER=off — identity by branch, description verbatim, no disclosure
+run_case m9 mr-none SILKOPS_MARKER=off -- --project "$PROJECT" "${ARGS[@]}"
+if [ "$(rc_of m9)" = 0 ] && out_of m9 | jq -e '.action == "created" and .identity == "branch" and .marker == false' >/dev/null \
+  && body_of m9 1 | jq -e '.body.description == "new mr body\n"' >/dev/null \
+  && ! body_of m9 1 | jq -r '.body.description' | grep -i silkops >/dev/null; then
+  pass "M9 marker off: created with the body verbatim, nothing names the harness, identity: branch"
+else fail "M9" "rc=$(rc_of m9) out=$(out_of m9) body=$(body_of m9 1 2>/dev/null)"; fi
+
+run_case m10 mr-open SILKOPS_MARKER=off -- --project "$PROJECT" "${ARGS[@]}"
+if [ "$(rc_of m10)" = 0 ] && out_of m10 | jq -e '.action == "updated" and .iid == 7 and .identity == "branch" and .marker == false' >/dev/null \
+  && body_of m10 1 | jq -e '.body.description == "new mr body\n"' >/dev/null; then
+  pass "M10 marker off: the open MR for the branch gets its whole description replaced (re-sync says so)"
+else fail "M10" "rc=$(rc_of m10) out=$(out_of m10) body=$(body_of m10 1 2>/dev/null)"; fi
+
 echo "test-mr-upsert: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]
