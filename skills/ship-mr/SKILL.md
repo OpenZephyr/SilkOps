@@ -6,74 +6,31 @@ argument-hint: "[--plan <plan-path>] [--draft] [--target <branch>]"
 
 # ship-mr
 
-Push the current branch and open — or re-sync — its merge request, with a description
-built from the plan units the branch implements, then hand the MR to `watch-pipeline`.
-Every write goes through `${CLAUDE_PLUGIN_ROOT}/ops/` under the session identity (the
-operator authors the MR). **This skill never merges.** It stops at "ready"; a human merges.
+Result: one JSON line from `${CLAUDE_PLUGIN_ROOT}/ops/mr-upsert.sh` with `action` (created|updated|unchanged),
+`iid`, `web_url`, `head_pipeline_id`, `identity`, then a hand-off to `watch-pipeline`. This skill
+never merges and never commits; the `commit` skill runs first.
 
-## Inputs
+## Steps
 
-- `--project <group/project>` — always explicit. Derive it from `glab repo view` or the git
-  remote (`git remote get-url origin`), then state it in every `ops/` call; never let a script
-  infer it from the cwd.
-- `--plan <plan-path>` — the plan whose units describe this branch (default: the plan named in
-  the repo's `AGENTS.md`, else ask). `--draft` marks the MR draft. `--target <branch>` defaults
-  to the repo's default branch (`glab api projects/<urlenc> | jq -r .default_branch`).
-- Issue numbers the user names ("closes #12 and #14") become `Closes #n` lines.
-
-## Procedure
-
-1. **Refuse the wrong starting point.** `git branch --show-current`; if it is the default branch
-   (or detached HEAD), stop: this skill ships a feature branch, it never pushes the default
-   branch. `git status --porcelain`; anything it lists is NOT pushed by this skill, so list it in
-   the report and carry on — stop only when a listed path is one the change needs (a file the
-   plan unit names, or one the branch already touches), because then the push would ship an
-   incomplete change. Never `git add -A` / `git add .` here; this skill does not commit at all
-   (the `commit` skill does, by named path, before this one runs).
-2. **Push.** `git push -u origin HEAD`. A rejected push (non-fast-forward) is reported, not
-   forced: never `--force` from this skill.
-3. **Build the description from the plan.** `python3 ${CLAUDE_PLUGIN_ROOT}/ops/plan-units.py
-   <plan-path>` → units with `id`, `title`, `goal`, `files`. `git diff --name-only
-   <target>...HEAD` lists the branch's files; the units whose `files` intersect that list are
-   the ones this branch implements. Write the description to a temp file in the session scratch
-   dir (`mktemp "${TMPDIR:-/tmp}/silkops-mr.XXXXXX"`), never inline in argv:
-
-   ```
-   ## Units
-   - **U<N> — <title>**: <goal>
-   ## Files
-   - `path` …
-   Closes #n            (one line per issue the user named)
-   ```
-
-   Keep it short; `mr-upsert.sh` adds the provenance marker and wraps the text in the managed
-   region, so the reviewer's own paragraphs survive a re-sync.
-4. **Re-check for an existing open MR right before create.** `glab api
-   "projects/<urlenc>/merge_requests?source_branch=<urlenc branch>&state=opened"`. A result
-   with the same source branch means update, never a second MR; `[]` means create. A non-zero
-   exit is unknown — resolve auth first, do not guess.
-5. **Upsert.** `${CLAUDE_PLUGIN_ROOT}/ops/mr-upsert.sh --project P --source <branch>
-   --target <default> --title "<U-IDs — short title>" --description-file <tmp>
-   --marker-unit <U-ID or "mr"> --plan <plan basename> --run <run-id> [--draft]`.
-   The result carries `action` (created | updated | unchanged), `iid`, `web_url`,
-   `head_pipeline_id`. Read `action` back to the user — an `updated` on a branch you thought
-   was new means an MR already existed (Step 4 found it).
-6. **Print the MR URL and hand off.** Invoke `watch-pipeline` with the `iid` and the same
-   `--project`. `watch-pipeline` reports "ready, not merging — a human merges" or the triage;
-   this skill has nothing more to do after that.
+1. `git branch --show-current`: the default branch or a detached HEAD stops here. `git status
+   --porcelain`: unrelated paths are listed in the report, not a stop; stop only when a listed
+   path is one the change needs. Never `git add -A`.
+2. `git push -u origin HEAD`. A rejected push is reported, never forced.
+3. Description to a scratch file (never argv): units from `ops/plan-units.py <plan>` whose `files`
+   intersect `git diff --name-only <target>...HEAD`; `## Units` (U-ID, title, goal), `## Files`,
+   one `Closes #n` per issue the user named. Short: the marker and managed region are added by
+   the script, so reviewer text outside it survives a re-sync.
+4. `ops/mr-upsert.sh --project P --source <branch> --target <default> --title "<U-IDs — title>"
+   --description-file <f> --marker-unit <U-ID|mr> --plan <basename> --run <id> [--draft]`.
+   It finds an open MR for the branch first; `updated` on a branch you thought new means one existed.
+5. Print `web_url`, then invoke `watch-pipeline` with the `iid` and the same `--project`.
 
 ## Disclosure
 
-- On a project outside the operator's own group (`token-check.sh` reports the group), run every
-  write with `SILKOPS_MARKER=off`: the MR is then found by branch, its description is the file
-  verbatim, and nothing on the host names the harness. The result says `identity: branch`.
+- Outside the operator's group (`token-check.sh` reports it), every write runs with
+  `SILKOPS_MARKER=off`: identity by branch, description verbatim, nothing names the harness.
 
 ## Guardrails
 
-- Never merge: no merge command, no merge API call, no "accept" of any kind. Ready is the
-  end state.
-- Never push the default branch, never force-push, never `git add -A`.
-- Description by file, marker inside the managed region only; text outside it is preserved
-  byte for byte by `mr-upsert.sh`.
-- `--project` stated explicitly on every call; the session identity is the author (no
-  settings token anywhere in this flow).
+- No merge call of any kind; never push the default branch; never force-push.
+- `--project` explicit on every call; session identity, never the settings token.

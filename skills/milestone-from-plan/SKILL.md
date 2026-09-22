@@ -6,43 +6,24 @@ argument-hint: "<plan-path> [--project <group/project>] [--milestone <title>]"
 
 # milestone-from-plan
 
-Turn an implementation-ready plan into a GitLab milestone with one issue per implementation
-unit, dependency-linked, marker-identified, and re-syncable. Every write goes through
-`${CLAUDE_PLUGIN_ROOT}/ops/`; this skill performs no settings writes and never edits a
-closed issue.
+Result: one JSON report from `${CLAUDE_PLUGIN_ROOT}/ops/milestone-sync.sh --plan <path>`:
+`milestone {title, iid, action}`, `issues[] {unit, iid, action, blocked_by}`, `links[]`. Identity
+is the marker, then the `u<N>` label, never the title. Closed issues are never edited (exit 7).
 
-The issue body shape is `references/issue-body.md`; `milestone-sync.sh` renders it.
+## Steps
 
-## Inputs
-
-- `<plan-path>` — a plan with `### U<N>.` units (`artifact_readiness: implementation-ready`).
-- `--project <group/project>` — always explicit. Derive it from `glab repo view` or the git
-  remote, then state it in every call; never let a script infer it from the cwd.
-- `--milestone <title>` — defaults to the plan's `title:` frontmatter.
-
-## Procedure
-
-1. **One call.** `${CLAUDE_PLUGIN_ROOT}/ops/milestone-sync.sh --project P --plan <plan-path>
-   --run <run-id> [--milestone <title>] --dry-run` first: read the report (milestone action,
-   unit → iid → action, links), then run it again without `--dry-run`. It parses the units,
-   upserts the milestone and every issue, links every `depends_on` edge as `blocks`, and returns
-   one JSON report. Never loop over units in the session; the script owns the loop.
-2. **Read the report.** `milestone.action`, `issues[] {unit, iid, action, blocked_by}`,
-   `links[] {source_iid, target_iid, link_type, existing, fallback}`. A `fallback: relates_to`
-   means the project has no blocking links; say so. A closed milestone or issue exits 7: stop
-   and ask, never create a look-alike.
-3. **Re-sync.** Run the same call after the plan changes: only managed regions change, human
-   text survives, an unchanged plan performs zero writes. A unit that disappeared from the
-   plan: post a note with `ops/note.sh` naming the plan's git SHA and close the issue with
-   `glab issue close <iid> -R P` if open; never reopen.
-4. **Report** the milestone URL and the unit → iid → action table from the JSON, nothing more.
+1. `ops/milestone-sync.sh --project P --plan <path> --run <id> [--milestone <title>] --dry-run`:
+   read milestone action, unit → iid → action, links. Then the same call without `--dry-run`.
+   The script parses the units, upserts the milestone (title from the plan's `title:`) and every
+   issue, links every `depends_on` edge as `blocks`. Never loop over units in the session.
+2. `fallback: relates_to` on a link means the project has no blocking links; say so. Exit 7
+   (closed milestone or issue, ambiguous identity): stop and ask; never create a look-alike.
+3. Re-sync after the plan changed: the same call. Only managed regions change, human text
+   survives, an unchanged plan is zero writes. A unit that left the plan: `ops/note.sh` naming
+   the plan's git SHA, then `glab issue close <iid> -R P` if open; never reopen.
+4. Report the milestone URL and the unit → iid → action table from the JSON.
 
 ## Guardrails
 
-- Identity is by marker, then label `u<N>`; never by title.
-- Closed issues are never edited (`issue-upsert.sh` exits 7; do not work around it).
-- Every object this skill writes carries the marker; that is what `scripts/audit-milestone.sh`
-  checks.
-- No raw `glab api` calls in this skill; every read or write is one of the `ops/` scripts named
-  here (`plan-units.py`, `milestone-upsert.sh`, `issue-upsert.sh`, `issue-link.sh`, `note.sh`).
-  If you need another operation, it belongs in `ops/`, not in this skill.
+- Every object carries the marker (`scripts/audit-milestone.sh` checks it).
+- No raw `glab api` calls here; a missing operation belongs in `ops/`, not in this skill.

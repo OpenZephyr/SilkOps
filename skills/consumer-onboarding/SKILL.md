@@ -6,53 +6,29 @@ argument-hint: "<consumer group/project> <image:tag> [--factory <group/project>]
 
 # consumer-onboarding
 
-Onboard a GitLab project onto the silkOps image factory in two phases across two projects,
-with a confirmation before every settings write. Phase A acts on the factory; Phase B acts on
-the consumer. The settings token is injected only around settings writes; everything else
-runs as the operator.
+Result: the allow-list entry, the pin MR (URL and pipeline state), schedules created (owner, next
+run) and variable keys, each from its `${CLAUDE_PLUGIN_ROOT}/ops/` script's JSON. One confirmation
+per settings write, shown as current vs proposed. Read `references/preflight.md` first.
 
-**Read `references/preflight.md` before Step 1.**
+## Steps
 
-## Inputs
-
-- `<consumer group/project>` and `<image:tag>` (an immutable `<version>-r<N>` tag).
-- `--factory <group/project>` — defaults to `void-realm-solutions/ci-cd`.
-- `--group` — only when the operator explicitly wants the whole group allow-listed
-  (KD2: per project by default; group scope needs a stated yes).
-
-## Procedure
-
-1. **Pre-flight** (read-only): `${CLAUDE_PLUGIN_ROOT}/ops/token-check.sh --project <factory>
-   --for settings` and `… --project <consumer> --for settings`; `ops/schedule.sh --project
-   <consumer> list`; check whether the consumer already carries the conventions block
-   (`ops/conventions.sh --dir <checkout>` on a scratch copy reports `unchanged`); confirm the factory image
-   tag exists (`ops/registry.sh --project <factory> digest <image> <tag>`). Report the checklist
-   from `references/preflight.md`. Stop on exit 4 and name the role needed.
-2. **Phase A — allow-list on the factory.** `ops/allowlist.sh --project <factory> add
-   --consumer <consumer> [--group] --dry-run` → show current entries and the proposed one.
-   Ask the operator to confirm. Then run without `--dry-run`. `existing: true` means nothing
-   to do.
-3. **Phase B — pin plus snippet in one MR on the consumer.** On a new branch in a checkout of
-   the consumer: set the image reference to `registry.gitlab.com/<factory>/<image>:<tag>`
-   in its CI (the `FACTORY_IMAGE_ROOT` pattern from ci-cd's task files); run
-   `ops/conventions.sh --dir <checkout>` (AGENTS.md gets the neutral block once; CLAUDE.md
-   becomes `@AGENTS.md` when absent, and is kept when it has content of its own); commit; then
-   invoke `ship-mr` for that branch and `watch-pipeline` for the MR. The pull succeeding in
-   that pipeline is the verification; `pull access denied` within seconds means Phase A did
-   not land (facts file: `pull-access-denied`).
-4. **Schedules and variables on the consumer** (each one: dry-run, show, confirm, apply):
-   `ops/schedule.sh --project <consumer> create --description … --cron "0 22 * * *" --ref
-   main --timezone <tz>` (the script refuses sub-daily crons unless `--allow-frequent`; do
-   not add that flag without the operator asking); `ops/variable.sh --project <consumer> set
-   --key <K> --value-file <path> --masked --protected` — tell the operator to place the value
-   in a file, never to paste it into the session.
-5. **Report**: allow-list entry, MR URL and pipeline state, schedules created (owner,
-   next run), variables created (keys only).
+1. Pre-flight, read-only: `ops/token-check.sh --project <factory> --for settings` and the same for
+   the consumer; `ops/schedule.sh --project <consumer> list`; `ops/registry.sh --project <factory>
+   digest <image> <tag>`; `ops/conventions.sh --dir <scratch copy>` (`unchanged` = block present).
+   Exit 4 stops with the role needed.
+2. Factory: `ops/allowlist.sh --project <factory> add --consumer <consumer> [--group] --dry-run`,
+   confirm, then apply. `--group` only on an explicit yes (KD2). `existing: true` = nothing to do.
+3. Consumer, one MR: on a new branch set the image to `registry.gitlab.com/<factory>/<image>:<tag>`
+   (the `FACTORY_IMAGE_ROOT` pattern), run `ops/conventions.sh --dir <checkout>`, commit with the
+   `commit` skill, then `ship-mr` and `watch-pipeline`. A pull success is the verification;
+   `pull access denied` within seconds means step 2 did not land (fact `pull-access-denied`).
+4. Schedules and variables, each dry-run → show → confirm → apply: `ops/schedule.sh --project
+   <consumer> create --description … --cron "0 22 * * *" --ref main --timezone <tz>` (sub-daily
+   crons refused unless the operator asks for `--allow-frequent`); `ops/variable.sh --project
+   <consumer> set --key K --value-file <path> --masked --protected` (value by file, never pasted).
+5. Report the four items above.
 
 ## Guardrails
 
-- One confirmation per settings write; show current vs proposed before asking.
-- Group-scoped allow-listing only with `--group` and an explicit operator yes.
 - Values never enter argv or the transcript; `variable.sh` refuses `--value`.
-- Do not create the settings token or edit protected branches from this skill — those are
-  the by-hand pre-steps in `docs/tokens.md`.
+- No token creation and no protected-branch edit here: those are the by-hand steps in `docs/tokens.md`.
