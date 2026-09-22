@@ -29,7 +29,7 @@ web_url, first_failure), `retried`, `resume_hint`. Never merges: "ready" is the 
    - `errors[]` non-empty: a jobs listing failed; the snapshot is stale, not green.
 3. Retry once (`--retry`) only when every failed job is `transient` and `retry_safe`, the
    pipeline is current, and `retry_count` is 0. Exit 6: the guard refused; report, stop.
-4. Report: pipeline id and URL, verdict, per-job triage, retries, next human step.
+4. Report: pipeline id and URL, verdict, triage, retries, next human step.
 
 ## Guardrails
 
