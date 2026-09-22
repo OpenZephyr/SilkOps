@@ -12,6 +12,8 @@ is the marker, then the `u<N>` label, never the title. Closed issues are never e
 
 ## Steps
 
+0. Pre-flight once: `ops/token-check.sh --project P --expect-role Developer` (exit 4 names the
+   role needed); mention only `operator.username` when `operator.exists` is true.
 1. `ops/milestone-sync.sh --project P --plan <path> --run <id> [--milestone <title>] --dry-run`:
    read milestone action, unit → iid → action, links. Then the same call without `--dry-run`.
    The script parses the units, upserts the milestone (title from the plan's `title:`) and every

@@ -1,0 +1,2 @@
+GET	users[?]username=aqua	../u4-common/users-aqua.json
+GET	users[?]username=*	../u4-common/empty.json

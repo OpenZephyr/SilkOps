@@ -130,5 +130,16 @@ else
   fail "T10" "rc=$(rc_of t10) err=$(err_of t10 | tail -1) calls=$(log_of t10 | wc -l)"
 fi
 
+# --- v0.2 U11 (#27, #35): operator identity and group, --expect-role
+run_check t11 maintainer SILKOPS_OPERATOR=aqua SILKOPS_OPERATOR_GROUP=void-realm-solutions -- --project "$PROJECT" --expect-role Developer
+if [ "$(rc_of t11)" = 0 ] && out_of t11 | jq -e '.operator.username == "aqua" and .operator.id == 42 and .operator.exists == true
+      and .operator_group == "void-realm-solutions" and .in_operator_group == true' >/dev/null; then
+  pass "T11 operator resolved to a real user, operator_group known, project is inside it, expected role met"
+else fail "T11" "rc=$(rc_of t11) out=$(out_of t11)"; fi
+run_check t11b maintainer SILKOPS_OPERATOR=ghost SILKOPS_OPERATOR_GROUP=other-group -- --project "$PROJECT" --expect-role Owner
+if [ "$(rc_of t11b)" = 4 ] && out_of t11b | jq -e '.ok == false and .error == "insufficient_role" and .operator.exists == false and .in_operator_group == false' >/dev/null; then
+  pass "T11b a dead operator name is reported exists:false, a project outside the group is flagged, --expect-role Owner exits 4"
+else fail "T11b" "rc=$(rc_of t11b) out=$(out_of t11b)"; fi
+
 echo "test-token-check: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

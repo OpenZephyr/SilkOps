@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 # token-check.sh — pre-flight: who am I, what can I do on <project> (plan U3, KTD3).
 #
-# Usage: token-check.sh --project <group/project> [--for settings|ci|session]
+# Usage: token-check.sh --project <group/project> [--for settings|ci|session] [--expect-role <Role>]
+#
+# v0.2 U11 (#27, #35): SILKOPS_OPERATOR (a username) is resolved to a real user and reported as
+# operator {username, id, exists}; a name that does not exist is reported, so a session never
+# writes a dead @mention. SILKOPS_OPERATOR_GROUP is reported with in_operator_group (the
+# project's namespace is that group or below it) — the disclosure default for markers and
+# trailers. --expect-role exits 4 when the identity's role is below it.
 #
 #   session (default)  the operator's own glab identity. Additionally reports
 #                      can_merge_protected / can_push_protected — informational
@@ -23,15 +29,16 @@ set -euo pipefail
 # shellcheck source=lib/glab.sh
 . "$(dirname "$0")/lib/glab.sh"
 
-usage() { fail "$EX_USAGE" usage "usage: token-check.sh --project <group/project> [--for settings|ci|session]${1:+ — $1}"; }
+usage() { fail "$EX_USAGE" usage "usage: token-check.sh --project <group/project> [--for settings|ci|session] [--expect-role <Role>]${1:+ — $1}"; }
 
-PROJECT=""; FOR="session"
+PROJECT=""; FOR="session"; EXPECT=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --project) [ $# -ge 2 ] || usage "--project needs a value"; PROJECT="$2"; shift 2 ;;
     --project=*) PROJECT="${1#--project=}"; shift ;;
     --for) [ $# -ge 2 ] || usage "--for needs a value"; FOR="$2"; shift 2 ;;
     --for=*) FOR="${1#--for=}"; shift ;;
+    --expect-role) [ $# -ge 2 ] || usage "--expect-role needs a value"; EXPECT="$2"; shift 2 ;;
     -h|--help) usage ;;
     *) usage "unknown argument: $1" ;;
   esac
@@ -56,6 +63,12 @@ api() {
 # optional endpoint is not worth a warning line.
 api_opt() { api "$1" 2>/dev/null || echo null; }
 
+role_level() {
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+    owner) echo 50 ;; maintainer) echo 40 ;; developer) echo 30 ;; reporter) echo 20 ;;
+    planner) echo 15 ;; guest) echo 10 ;; *) echo "" ;;
+  esac
+}
 role_name() {
   case "$1" in
     50) echo Owner ;; 40) echo Maintainer ;; 30) echo Developer ;; 20) echo Reporter ;;
@@ -64,6 +77,7 @@ role_name() {
   esac
 }
 
+EXPECT_LEVEL=""; if [ -n "$EXPECT" ]; then EXPECT_LEVEL="$(role_level "$EXPECT")"; [ -n "$EXPECT_LEVEL" ] || usage "--expect-role must be Owner, Maintainer, Developer, Reporter, Planner or Guest"; fi
 # The token-presence check inside the wrapper fires on this first call.
 IDENTITY="$(api user)" || fail "$EX_NO_TOKEN" no_identity "could not resolve the ${FOR} identity (glab api user failed); is a token configured?"
 USER_ID="$(printf '%s' "$IDENTITY" | jq -r '.id')"
@@ -95,7 +109,21 @@ if [ "$FOR" = session ]; then
   fi
 fi
 
+# --- operator (#35) and group (#27, KTD4) -----------------------------------------------
+OPERATOR=null
+if [ -n "${SILKOPS_OPERATOR:-}" ]; then
+  OU="$(api_opt "users?username=$(urlenc "$SILKOPS_OPERATOR")")"
+  OPERATOR="$(printf '%s' "$OU" | jq -c --arg u "$SILKOPS_OPERATOR" '(if type == "array" then [.[] | select(.username == $u)] | first else null end) as $m
+    | {username: $u, id: ($m.id // null), exists: ($m != null)}')"
+fi
+OGROUP="${SILKOPS_OPERATOR_GROUP:-}"
+IN_GROUP=null
+if [ -n "$OGROUP" ]; then
+  case "$(printf '%s' "$PROJ" | jq -r '.path_with_namespace')" in "$OGROUP"/*) IN_GROUP=true ;; *) IN_GROUP=false ;; esac
+fi
+
 REPORT="$(jq -n \
+  --argjson operator "$OPERATOR" --arg ogroup "$OGROUP" --argjson in_group "$IN_GROUP" \
   --arg for "$FOR" --arg role "$ROLE" --argjson level "$LEVEL" \
   --argjson identity "$IDENTITY" --argjson token "$TOKEN_INFO" --argjson proj "$PROJ" \
   --argjson can_merge "$CAN_MERGE" --argjson can_push "$CAN_PUSH" \
@@ -104,7 +132,11 @@ REPORT="$(jq -n \
     token: (if $token == null then null else {scopes: $token.scopes, expires_at: $token.expires_at, active: $token.active} end),
     project: {id: $proj.id, path: $proj.path_with_namespace, default_branch: $proj.default_branch},
     access_level: $level, role: $role,
-    can_merge_protected: $can_merge, can_push_protected: $can_push}')"
+    can_merge_protected: $can_merge, can_push_protected: $can_push,
+    operator: $operator, operator_group: (if $ogroup == "" then null else $ogroup end), in_operator_group: $in_group}')"
+if [ -n "$EXPECT_LEVEL" ] && [ "$LEVEL" -lt "$EXPECT_LEVEL" ]; then
+  fail "$EX_ROLE" insufficient_role "needs $EXPECT on $PROJECT (identity is $ROLE)" "$REPORT"
+fi
 
 if [ "$FOR" = settings ] && [ "$LEVEL" -lt 40 ]; then
   fail "$EX_ROLE" insufficient_role "needs Maintainer on $PROJECT (settings identity is $ROLE)" "$REPORT"

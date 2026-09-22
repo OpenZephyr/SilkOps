@@ -12,6 +12,8 @@ never merges and never commits; the `commit` skill runs first.
 
 ## Steps
 
+0. Pre-flight once: `ops/token-check.sh --project P --expect-role Developer`; read `operator`,
+   `in_operator_group` (disclosure default) and `siblings[]` later from the upsert result.
 1. `git branch --show-current`: the default branch or a detached HEAD stops here. `git status
    --porcelain`: unrelated paths are listed in the report, not a stop; stop only when a listed
    path is one the change needs. Never `git add -A`.
