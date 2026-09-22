@@ -1,6 +1,6 @@
 import { ThemeToggle } from './theme-toggle'
 
-const GITHUB_URL = 'https://github.com/silkops/silkops-harness'
+const GITHUB_URL = 'https://github.com/OpenZephyr/SilkOps'
 
 export function SiteHeader() {
   return (

@@ -1,8 +1,7 @@
-const GITHUB_URL = 'https://github.com/silkops/silkops-harness'
+const GITHUB_URL = 'https://github.com/OpenZephyr/SilkOps'
 
 const links = [
   ['GitHub', GITHUB_URL],
-  ['GitLab', 'https://gitlab.com/silkops/silkops-harness'],
   ['Releases', `${GITHUB_URL}/releases`],
   ['MIT license', `${GITHUB_URL}/blob/main/LICENSE`],
 ]

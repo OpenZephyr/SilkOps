@@ -4,9 +4,8 @@ import { useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 
 const tabs = [
-  { key: 'claude', label: 'claude', cmd: 'claude plugin marketplace add silkops/silkops-harness' },
-  { key: 'git', label: 'git', cmd: 'git clone https://gitlab.com/silkops/silkops-harness.git' },
-  { key: 'agents', label: 'agents.md', cmd: 'curl -fsSL https://silkops.dev/install.sh | sh' },
+  { key: 'claude', label: 'claude', cmd: 'claude plugin marketplace add OpenZephyr/SilkOps' },
+  { key: 'git', label: 'git', cmd: 'git clone https://github.com/OpenZephyr/SilkOps.git' },
 ]
 
 export function InstallBlock() {

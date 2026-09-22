@@ -41,7 +41,7 @@ export function Why() {
         ))}
       </ul>
       <a
-        href="https://github.com/silkops/silkops-harness#readme"
+        href="https://github.com/OpenZephyr/SilkOps#readme"
         className="mt-8 inline-flex items-center rounded-md border border-border px-3 py-2 text-xs text-foreground transition-colors hover:border-brand hover:text-brand"
       >
         Read docs →
