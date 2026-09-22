@@ -117,10 +117,16 @@ else fail "W2b" "rc=$(rc_of w2b) out=$(out_of w2b)"; fi
 run_case w2c watch-green -- "${COMMON[@]}" --mr x
 if [ "$(rc_of w2c)" = 2 ] && [ "$(calls_of w2c)" = 0 ]; then pass "W2c non-numeric --mr exits 2"; else fail "W2c" "rc=$(rc_of w2c)"; fi
 
-run_case w3 watch-no-pipeline -- "${COMMON[@]}" --mr 7
-if [ "$(rc_of w3)" = 5 ] && out_of w3 | jq -e '.ok == false and .error == "no_head_pipeline"' >/dev/null; then
-  pass "W3 MR without a head pipeline exits 5"
+# v0.2 U10 (#30): right after mr-upsert the MR has no head pipeline yet; wait it out inside the budget
+run_case w3 watch-no-pipeline -- "${COMMON[@]}" --mr 7 --wait 0
+if [ "$(rc_of w3)" = 0 ] && out_of w3 | jq -e '.ok == true and .still_running == true and .waiting_for == "head_pipeline" and .ready == false
+      and .resume_hint == "watch.sh --project void-realm-solutions/silkops-harness-eval --mr 7"' >/dev/null && [ "$(writes_of w3)" = 0 ]; then
+  pass "W3 (#30) no head pipeline and the budget spent -> still_running with waiting_for: head_pipeline and an MR resume hint, exit 0"
 else fail "W3" "rc=$(rc_of w3) out=$(out_of w3)"; fi
+run_case w3b watch-no-pipeline:watch-green GLAB_STUB_PHASE_MATCH="GET projects/*/merge_requests/7" -- "${COMMON[@]}" --mr 7 --wait 40 --interval 20
+if [ "$(rc_of w3b)" = 0 ] && out_of w3b | jq -e '.ready == true and .pipeline_id == 501' >/dev/null; then
+  pass "W3b (#30) the head pipeline appears on the second MR read -> watched to ready inside one call"
+else fail "W3b" "rc=$(rc_of w3b) out=$(out_of w3b | head -c 600)"; fi
 
 # --- AE2: transient before the marker -> one retry, then green -----------------------
 run_case w4 watch-failed-transient:watch-after-retry -- "${COMMON[@]}" --mr 7 --retry --wait 60 --interval 20
@@ -186,6 +192,13 @@ if [ "$(rc_of w8)" = 0 ] && out_of w8 | jq -e '.ok == true and .status == "runni
   && [ "$(writes_of w8)" = 0 ] && err_of w8 | grep -- 'resume with: watch.sh --project void-realm-solutions/silkops-harness-eval --mr 7 --pipeline 501' >/dev/null; then
   pass "W8 running past the wait budget -> still_running:true, resume hint carries --mr and --pipeline, exit 0"
 else fail "W8" "rc=$(rc_of w8) out=$(out_of w8)"; fi
+# v0.2 U10 (#31): a still-running report states how long this ref's last green run took and when to come back
+if out_of w8 | jq -e '.expected_duration_s == 540 and (.resume_after_s | type) == "number" and .resume_after_s >= 20 and .resume_after_s <= 540' >/dev/null; then
+  pass "W8b (#31) expected_duration_s from the ref's last successful pipeline, resume_after_s bounded by it"
+else fail "W8b" "out=$(out_of w8 | jq -c '{expected_duration_s, resume_after_s}')"; fi
+if out_of w1 | jq -e '.expected_duration_s == null or (.expected_duration_s | type) == "number"' >/dev/null && out_of w1 | jq -e '.approvals.approved == true and .not_ready_reason == null' >/dev/null; then
+  pass "W1b (#38) the green MR carries the approval state and no not_ready_reason"
+else fail "W1b" "out=$(out_of w1 | jq -c '{expected_duration_s, approvals, not_ready_reason}')"; fi
 
 # --- resume by pipeline id reaches the same terminal report --------------------------
 run_case w9 watch-running:watch-running:watch-green -- "${COMMON[@]}" --pipeline 501 --wait 300 --interval 20
@@ -203,6 +216,10 @@ run_case w10 watch-notready -- "${COMMON[@]}" --mr 7 --wait 0
 if [ "$(rc_of w10)" = 0 ] && out_of w10 | jq -e '.status == "success" and .terminal == true and .ready == false and .detailed_merge_status == "need_rebase"' >/dev/null; then
   pass "W10 success but need_rebase -> terminal, ready:false, detailed_merge_status reported"
 else fail "W10" "rc=$(rc_of w10) out=$(out_of w10)"; fi
+# v0.2 U10 (#38): not ready is explained, and the review policy is part of the verdict
+if out_of w10 | jq -e '.ready == false and (.not_ready_reason | test("rebase")) and .approvals.approvals_left == 1 and .approvals.approved == false' >/dev/null; then
+  pass "W10b (#38) need_rebase -> not_ready_reason says rebase; approvals_left reported"
+else fail "W10b" "out=$(out_of w10 | jq -c '{detailed_merge_status, not_ready_reason, approvals}')"; fi
 
 # --- --note: one triage note, deduplicated on the second run -------------------------
 run_case w11 watch-failed-transient -- "${COMMON[@]}" --mr 7 --note --wait 0
