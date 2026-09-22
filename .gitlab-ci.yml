@@ -40,6 +40,18 @@ tier1-py39:
     - python3 --version
     - python3 -m unittest discover -s tests/ops -p 'test_*.py'
 
+overlay-gate:
+  # void-mirror (the private overlay branch) may only add files under overlay/ (KTD2).
+  stage: test
+  image: debian:bookworm-slim
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "void-mirror"'
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq --no-install-recommends bash jq git ca-certificates >/dev/null
+    - git fetch -q origin main:refs/remotes/origin/main
+  script:
+    - bash scripts/gate-overlay-only.sh --base origin/main
+
 manifest:
   stage: test
   image: node:22-bookworm-slim
