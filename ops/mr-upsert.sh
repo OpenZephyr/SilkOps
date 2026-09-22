@@ -59,6 +59,22 @@ api_get "projects/$ENC/merge_requests?source_branch=$(urlenc "$SRC")&state=opene
   || fail "$EX_OTHER" lookup_failed "could not list the open MRs for $SRC in $PROJECT; refusing to write without a successful lookup: $(redact <"$TMP/lookup.err" | tr '\n' ' ')"
 FOUND="$(jq -c --arg t "$TGT" '([.[] | select(.target_branch == $t)] | first) // (first // null)' "$TMP/open.json")"
 
+# siblings <iid> — other open MRs on the same target that touch a file this MR touches (#41):
+# a later merge can silently drop the older MR's hunks, so both are named up front. Best effort:
+# a failed listing yields [] and never blocks the upsert.
+siblings() {
+  local mine others out='[]' o oid opaths
+  mine="$(api_get "projects/$ENC/merge_requests/$1/diffs?per_page=100" 2>/dev/null | jq -c '[.[] | .new_path, .old_path] | unique' 2>/dev/null || echo '[]')"
+  [ "$mine" != '[]' ] || { printf '[]'; return; }
+  others="$(api_get "projects/$ENC/merge_requests?state=opened&target_branch=$(urlenc "$TGT")&per_page=20" 2>/dev/null | jq -c --argjson me "$1" '[.[] | select(.iid != $me) | {iid, web_url, source_branch}]' 2>/dev/null || echo '[]')"
+  for oid in $(printf '%s' "$others" | jq -r '.[].iid'); do
+    opaths="$(api_get "projects/$ENC/merge_requests/$oid/diffs?per_page=100" 2>/dev/null | jq -c '[.[] | .new_path, .old_path] | unique' 2>/dev/null || echo '[]')"
+    o="$(jq -cn --argjson m "$mine" --argjson p "$opaths" '$m - ($m - $p) | sort')"
+    [ "$o" = '[]' ] || out="$(jq -cn --argjson a "$out" --argjson others "$others" --argjson oid "$oid" --argjson f "$o" '$a + [($others[] | select(.iid == $oid)) + {shared_files: $f}]')"
+  done
+  printf '%s' "$out"
+}
+
 # head_pipeline_of <iid> <json-or-null> — the list payload may omit head_pipeline.
 head_pipeline_of() {
   local hp
@@ -89,7 +105,7 @@ if [ "$FOUND" != null ]; then
   fi
   printf '%s' "$PLANNED" | jq -c '{description: .description}' >"$TMP/body.json"
   RESP="$(glab_ro api -X PUT "projects/$ENC/merge_requests/$IID" --input "$TMP/body.json")" || fail "$EX_OTHER" update_failed "could not update MR !$IID" "$IDENT"
-  result "$(jq -cn --argjson i "$IDENT" --argjson r "$RESP" --argjson hp "$HP" --argjson f "$FOUND" '$i + {action: "updated", web_url: ($r.web_url // $i.web_url), head_pipeline_id: $hp, prior: {description: ($f.description // "")}}')"
+  result "$(jq -cn --argjson i "$IDENT" --argjson r "$RESP" --argjson hp "$HP" --argjson f "$FOUND" --argjson sib "$(siblings "$IID")" '$i + {action: "updated", web_url: ($r.web_url // $i.web_url), head_pipeline_id: $hp, siblings: $sib, prior: {description: ($f.description // "")}}')"
   exit 0
 fi
 
@@ -106,4 +122,4 @@ jq -cn --arg s "$SRC" --arg t "$TGT" --arg title "$TITLE" --arg d "$DESC" '{sour
 RESP="$(glab_ro api -X POST "projects/$ENC/merge_requests" --input "$TMP/body.json")" || fail "$EX_OTHER" create_failed "could not create the MR $SRC -> $TGT in $PROJECT"
 IID="$(printf '%s' "$RESP" | jq -r '.iid')"
 HP="$(head_pipeline_of "$IID" "$RESP")"
-result "$(printf '%s' "$RESP" | jq -c --argjson hp "$HP" --argjson m "$MARKER_ON" '{action: "created", iid: .iid, web_url: .web_url, source_branch: .source_branch, target_branch: .target_branch, head_pipeline_id: $hp, identity: "branch", marker: $m}')"
+result "$(printf '%s' "$RESP" | jq -c --argjson hp "$HP" --argjson m "$MARKER_ON" --argjson sib "$(siblings "$IID")" '{action: "created", iid: .iid, web_url: .web_url, source_branch: .source_branch, target_branch: .target_branch, head_pipeline_id: $hp, identity: "branch", marker: $m, siblings: $sib}')"

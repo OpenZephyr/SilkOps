@@ -68,5 +68,11 @@ if [ "$(rc_of m10)" = 0 ] && out_of m10 | jq -e '.action == "updated" and .iid =
   pass "M10 marker off: the open MR for the branch gets its whole description replaced (re-sync says so)"
 else fail "M10" "rc=$(rc_of m10) out=$(out_of m10) body=$(body_of m10 1 2>/dev/null)"; fi
 
+# --- v0.2 U11 (#41): other open MRs on the same target that touch the same files are named
+run_case m11 mr-siblings -- --project "$PROJECT" "${ARGS[@]}"
+if [ "$(rc_of m11)" = 0 ] && out_of m11 | jq -e '.action == "updated" and (.siblings | length) == 1 and .siblings[0].iid == 8 and .siblings[0].shared_files == ["README.md"]' >/dev/null; then
+  pass "M11 sibling MR !8 shares README.md with this branch -> listed in siblings[] with the shared files"
+else fail "M11" "rc=$(rc_of m11) out=$(out_of m11 | head -c 600) log=$(log_of m11 | tr '\n' ';' | head -c 600)"; fi
+
 echo "test-mr-upsert: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]
