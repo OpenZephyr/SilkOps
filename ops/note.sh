@@ -46,11 +46,17 @@ require_ci_token   # top level, so the exit-3 JSON and message reach the real st
 ENC="$(urlenc "$PROJECT")"
 if [ -n "$ISSUE" ]; then NOTEABLE=issue; IID="$ISSUE"; NPATH="projects/$ENC/issues/$IID/notes"
 else NOTEABLE=merge_request; IID="$MR"; NPATH="projects/$ENC/merge_requests/$IID/notes"; fi
-MARKER="$(silkops_marker "$PLAN" "$UNIT" "$RUN")"$'\n'   # $(...) strips the marker's newline
-KEYLINE=""; [ -n "$KEY" ] && KEYLINE="<!-- silkops:key=$KEY -->"$'\n'
+# SILKOPS_MARKER=off (KTD3): no marker line; a --dedupe-key becomes a neutral key comment.
+if marker_enabled; then
+  MARKER_ON=true; MARKER="$(silkops_marker "$PLAN" "$UNIT" "$RUN")"$'\n'   # $(...) strips the marker's newline
+  KEYLINE=""; [ -n "$KEY" ] && KEYLINE="<!-- silkops:key=$KEY -->"$'\n'
+else
+  MARKER_ON=false; MARKER=""
+  KEYLINE=""; [ -n "$KEY" ] && KEYLINE="<!-- note-key=$KEY -->"$'\n'
+fi
 # The body stays a JSON object end to end: $(...) would strip the file's final newline.
 NOTE_JSON="$(jq -Rsc --arg pre "$MARKER$KEYLINE" '{body: ($pre + .)}' <"$BODY_FILE")"
-IDENT="$(jq -cn --arg n "$NOTEABLE" --argjson iid "$IID" '{noteable: $n, iid: $iid}')"
+IDENT="$(jq -cn --arg n "$NOTEABLE" --argjson iid "$IID" --argjson m "$MARKER_ON" '{noteable: $n, iid: $iid, marker: $m}')"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/silkops-note.XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
 
 if [ -n "$KEY" ]; then
@@ -58,8 +64,12 @@ if [ -n "$KEY" ]; then
   # read as "no notes yet". Without --dedupe-key no listing is made at all.
   api_get "$NPATH?per_page=100" >"$TMP/notes.json" 2>"$TMP/lookup.err" \
     || fail "$EX_OTHER" lookup_failed "could not list the notes of $NOTEABLE $IID for dedupe key '$KEY'; refusing to write without a successful lookup: $(redact <"$TMP/lookup.err" | tr '\n' ' ')" "$IDENT"
-  EXISTING="$(jq -c --arg p "$PLAN" --arg u "$UNIT" --arg k "<!-- silkops:key=$KEY -->" \
-    '[.[] | select((.body // "") | contains("<!-- silkops:") and contains("plan=\($p) unit=\($u) run=") and contains($k))] | first // null' "$TMP/notes.json")"
+  if [ "$MARKER_ON" = true ]; then
+    EXISTING="$(jq -c --arg p "$PLAN" --arg u "$UNIT" --arg k "<!-- silkops:key=$KEY -->" \
+      '[.[] | select((.body // "") | contains("<!-- silkops:") and contains("plan=\($p) unit=\($u) run=") and contains($k))] | first // null' "$TMP/notes.json")"
+  else
+    EXISTING="$(jq -c --arg k "${KEYLINE%$'\n'}" '[.[] | select((.body // "") | contains($k))] | first // null' "$TMP/notes.json")"
+  fi
   if [ "$EXISTING" != null ]; then
     result "$(jq -cn --argjson i "$IDENT" --argjson e "$EXISTING" --arg k "$KEY" '$i + {existing: true, id: $e.id, dedupe_key: $k}')"
     exit 0
