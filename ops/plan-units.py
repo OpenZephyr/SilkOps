@@ -57,7 +57,11 @@ class Parser(argparse.ArgumentParser):
 
 
 def parse_uids(text):
-    """U-IDs in order of appearance, ranges expanded, de-duplicated."""
+    """U-IDs in order of appearance, ranges expanded, de-duplicated. Only the first clause
+    counts: a sentence break or semicolon ends the list, so prose after "none" stays prose."""
+    text = re.split(r"[;.]\s|[;.]$", text, maxsplit=1)[0]
+    if text.strip().lower() in ("none", "—", "-", "n/a", ""):
+        return []
     out = []
     consumed = []
     for m in UID_RANGE_RE.finditer(text):
@@ -78,13 +82,28 @@ def parse_uids(text):
 
 
 def parse_requirements(text):
-    toks = [t.strip().strip("`") for t in re.split(r"[,;]", text)]
+    # commas, semicolons and sentence breaks all separate; a trailing period is not a token
+    toks = [t.strip().strip("`").rstrip(".") for t in re.split(r"[,;]|\.\s+", text)]
     return [t for t in toks if t and t.lower() not in ("none", "—", "-", "n/a")]
+
+
+BRACE_RE = re.compile(r"\{([^{}]*,[^{}]*)\}")
+
+
+def expand_braces(path):
+    """One level of `{a,b}` expansion, left to right, as a shell would."""
+    m = BRACE_RE.search(path)
+    if not m:
+        return [path]
+    out = []
+    for alt in m.group(1).split(","):
+        out.extend(expand_braces(path[:m.start()] + alt.strip() + path[m.end():]))
+    return out
 
 
 def paths_from(text):
     head = text.split(" (", 1)[0]
-    return BACKTICK_RE.findall(head)
+    return [p for raw in BACKTICK_RE.findall(head) for p in expand_braces(raw)]
 
 
 def parse_units(lines):

@@ -143,5 +143,55 @@ class Contract(unittest.TestCase):
         self.assertIn("U3", out["warnings"][0])
 
 
+class ProseAndBraces(unittest.TestCase):
+    """#25 (v0.2 U7): prose in Dependencies, sentence breaks in Requirements, brace expansion in Files."""
+    PLAN = """---
+title: t
+---
+### U1. First
+- **Goal:** g
+- **Requirements:** R1, R2, R16. KTD1, KTD2.
+- **Dependencies:** none
+- **Files:**
+  - `apps/gitlab-runner/steam/{helmrelease.yaml,values.yaml}` (modify)
+  - `ops/one.sh` (create)
+- **Verification:** v
+### U2. Second
+- **Goal:** g
+- **Requirements:** R3
+- **Dependencies:** none for the repo change; U8 bootstraps it live.
+- **Files:**
+  - `x.md`
+- **Verification:** v
+### U3. Third
+- **Goal:** g
+- **Requirements:** —
+- **Dependencies:** U1, U2
+- **Files:**
+  - `y.md`
+- **Verification:** v
+"""
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        self.path = os.path.join(self.d, "plan.md")
+        with open(self.path, "w") as f:
+            f.write(self.PLAN)
+        self.rc, self.out, self.err = run("plan-units.py", self.path)
+        self.assertEqual(self.rc, 0, self.err)
+
+    def test_dependencies_prose_after_none_is_not_a_dependency(self):
+        u = by_id(self.out)
+        self.assertEqual(u["U2"]["depends_on"], [])
+        self.assertEqual(u["U3"]["depends_on"], ["U1", "U2"])
+
+    def test_requirements_split_on_sentence_breaks(self):
+        self.assertEqual(by_id(self.out)["U1"]["requirements"], ["R1", "R2", "R16", "KTD1", "KTD2"])
+
+    def test_files_brace_expansion(self):
+        self.assertEqual(by_id(self.out)["U1"]["files"],
+                         ["apps/gitlab-runner/steam/helmrelease.yaml", "apps/gitlab-runner/steam/values.yaml", "ops/one.sh"])
+
+
 if __name__ == "__main__":
     unittest.main()

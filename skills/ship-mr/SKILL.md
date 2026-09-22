@@ -25,9 +25,11 @@ operator authors the MR). **This skill never merges.** It stops at "ready"; a hu
 
 1. **Refuse the wrong starting point.** `git branch --show-current`; if it is the default branch
    (or detached HEAD), stop: this skill ships a feature branch, it never pushes the default
-   branch. `git status --porcelain`; if it lists files unrelated to the change, print them and
-   stop — the operator commits or stashes them. Never `git add -A` / `git add .` here; this skill
-   does not commit at all (use the commit skill first).
+   branch. `git status --porcelain`; anything it lists is NOT pushed by this skill, so list it in
+   the report and carry on — stop only when a listed path is one the change needs (a file the
+   plan unit names, or one the branch already touches), because then the push would ship an
+   incomplete change. Never `git add -A` / `git add .` here; this skill does not commit at all
+   (use the commit skill first).
 2. **Push.** `git push -u origin HEAD`. A rejected push (non-fast-forward) is reported, not
    forced: never `--force` from this skill.
 3. **Build the description from the plan.** `python3 ${CLAUDE_PLUGIN_ROOT}/ops/plan-units.py
