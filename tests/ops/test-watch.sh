@@ -92,6 +92,11 @@ run_case w17 watch-green -- "${COMMON[@]}" --mr 7 --wait 0 --sha a1b2c3d4e5f6071
 if [ "$(rc_of w17)" = 0 ] && [ "$(out_of w17 | jq -r .ready)" = true ]; then
   pass "W17 --sha matching the head pipeline's commit -> watches it normally (ready:true)"
 else fail "W17" "rc=$(rc_of w17) out=$(out_of w17)"; fi
+run_case w17c watch-green -- "${COMMON[@]}" --mr 7 --wait 0 --sha a1b2c3d
+if [ "$(rc_of w17c)" = 0 ] && [ "$(out_of w17c | jq -r .ready)" = true ] && [ "$(out_of w17c | jq -r .still_running)" = false ]; then
+  pass "W17c (#26) an abbreviated --sha that prefixes the head pipeline's commit matches"
+else fail "W17c" "rc=$(rc_of w17c) out=$(out_of w17c | head -c 400)"; fi
+
 run_case w17b watch-green -- "${COMMON[@]}" --mr 7 --wait 0 --sha deadbeefdeadbeefdeadbeefdeadbeefdeadbeef
 if [ "$(rc_of w17b)" = 0 ] && [ "$(out_of w17b | jq -r .still_running)" = true ] && [ "$(out_of w17b | jq -r .waiting_for_sha)" = deadbeefdeadbeefdeadbeefdeadbeefdeadbeef ] && [ "$(out_of w17b | jq -r .resume_hint)" != null ]; then
   pass "W17b --sha not yet the head pipeline's commit, budget spent -> still_running with waiting_for_sha and a resume hint, no retry"
