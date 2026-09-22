@@ -43,3 +43,6 @@ This file is read by every agent; `CLAUDE.md` only imports it.
 
 - Version lives in `.claude-plugin/plugin.json`; release tag is `silkops-harness--vX.Y.Z`
   (`claude plugin tag`). The factory in `ci-cd` builds `harness:X.Y.Z-rN` from the release asset.
+- GitHub is a main-only push mirror (`void-mirror` and every other branch stay on GitLab);
+  `scripts/github-release.sh` publishes the tag's asset there. `ops/inbox.sh` reads GitHub issues
+  and PRs; a PR is fetched as a branch and shipped through GitLab, closing on GitHub via `Closes #n`.
