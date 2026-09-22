@@ -119,6 +119,14 @@ class FactsFile(unittest.TestCase):
                      "bind-mount-outside-builds", "tag-already-exists"):
             self.assertIn(want, ids)
 
+    def test_core_facts_name_no_private_project(self):
+        """R2 (v0.2 U2): core ships generic GitLab, Docker and runner facts only; a consumer's
+        facts live in its own .silkops/facts.json and a machine's in the overlay."""
+        private = re.compile(r"void-nance|inter-cluster|void-realm-solutions|sharadar|flux|gke|helm", re.I)
+        for f in self.facts:
+            for field in ("id", "explanation", "source", "step"):
+                self.assertIsNone(private.search(f[field]), "%s.%s names a private project: %r" % (f["id"], field, f[field]))
+
 
 if __name__ == "__main__":
     unittest.main()

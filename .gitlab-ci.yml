@@ -18,13 +18,16 @@ tier1:
   script:
     - bash tests/run.sh
     - shellcheck -x -P ops ops/*.sh ops/lib/*.sh
-    - python3 ops/render-runbook.py --check
+    - python3 ops/render-runbook.py   # rendered here, never committed (KTD5)
     # Verification gate: no merge verb, no protected-branch write, anywhere in skills/ or ops/.
     # token-check.sh's read of protected_branches is the one sanctioned hit.
     - bash scripts/gate-no-merge.sh --self-test
     - bash scripts/gate-no-merge.sh
     # plugin.json and marketplace.json must agree on the version (release.sh checks the tag against plugin.json).
     - test "$(jq -r .version .claude-plugin/plugin.json)" = "$(jq -r '.plugins[0].version' .claude-plugin/marketplace.json)"
+  artifacts:
+    paths: [references/runbook.md]
+    expire_in: 30 days
 
 manifest:
   stage: test
@@ -40,7 +43,7 @@ release:
   rules:
     - if: '$CI_COMMIT_TAG =~ /^silkops-harness--v/'
   before_script:
-    - apt-get update -qq && apt-get install -y -qq --no-install-recommends bash jq curl git ca-certificates >/dev/null
+    - apt-get update -qq && apt-get install -y -qq --no-install-recommends bash jq curl git python3 ca-certificates >/dev/null
   script:
     - bash scripts/release.sh
   artifacts:

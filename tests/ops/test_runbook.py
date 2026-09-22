@@ -8,16 +8,24 @@ class Runbook(unittest.TestCase):
     def facts(self):
         return json.load(open(os.path.join(ROOT, "facts", "environment.json")))["facts"]
 
-    def test_checked_in_runbook_is_fresh(self):
-        r = subprocess.run([sys.executable, SCRIPT, "--check"], capture_output=True, text=True)
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertTrue(json.loads(r.stdout)["ok"])
+    def test_render_into_a_root_lists_every_core_fact(self):
+        # KTD5 (v0.2): the runbook is rendered by CI, not committed; render into a scratch root.
+        with tempfile.TemporaryDirectory() as d:
+            for sub in ("facts", "references"):
+                os.makedirs(os.path.join(d, sub))
+            json.dump({"schema_version": "1", "facts": self.facts()},
+                      open(os.path.join(d, "facts", "environment.json"), "w"))
+            open(os.path.join(d, "references", "runbook.template.md"), "w").write(
+                open(os.path.join(ROOT, "references", "runbook.template.md")).read())
+            r = subprocess.run([sys.executable, SCRIPT, "--root", d], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            text = open(os.path.join(d, "references", "runbook.md")).read()
+            for f in self.facts():
+                self.assertIn("### `%s`" % f["id"], text)
+                self.assertIn(f["explanation"].strip(), text)
 
-    def test_every_fact_rendered(self):
-        text = open(os.path.join(ROOT, "references", "runbook.md")).read()
-        for f in self.facts():
-            self.assertIn("### `%s`" % f["id"], text)
-            self.assertIn(f["explanation"].strip(), text)
+    def test_runbook_is_not_committed(self):
+        self.assertFalse(os.path.exists(os.path.join(ROOT, "references", "runbook.md")))
 
     def test_stale_runbook_detected(self):
         with tempfile.TemporaryDirectory() as d:

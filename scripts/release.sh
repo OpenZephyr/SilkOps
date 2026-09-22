@@ -16,8 +16,10 @@ name="silkops-harness-${version}.tar.gz"
 git archive --format=tar.gz --prefix="silkops-harness-${version}/" -o "dist/${name}" "$tag"
 ( cd dist && sha256sum "$name" > "${name}.sha256" )
 cat "dist/${name}.sha256"
+# The runbook is rendered from the core facts at release time, never committed (KTD5).
+python3 ops/render-runbook.py >/dev/null && cp references/runbook.md "dist/silkops-harness-${version}-runbook.md"
 base="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/silkops-harness/${version}"
-for f in "$name" "${name}.sha256"; do
+for f in "$name" "${name}.sha256" "silkops-harness-${version}-runbook.md"; do
   # JOB-TOKEN header via a curl config on stdin (`-K -`): never in the URL, never on argv.
   printf 'header = "JOB-TOKEN: %s"\n' "${CI_JOB_TOKEN}" | curl -fsS -K - --upload-file "dist/${f}" "${base}/${f}" >/dev/null
   echo "uploaded ${base}/${f}"

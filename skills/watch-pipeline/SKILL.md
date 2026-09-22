@@ -10,8 +10,8 @@ Watch one pipeline to a verdict: ready, failed (with a triage), terminal-but-not
 still running with a resume hint. The loop is `${CLAUDE_PLUGIN_ROOT}/ops/watch.sh`; this skill
 resolves the target, reads its JSON, and decides what to do with the verdict. **It never
 merges** — "ready" is where it stops and a human takes over. Facts behind each classification
-live in `${CLAUDE_PLUGIN_ROOT}/facts/environment.json`; the runbook
-(`${CLAUDE_PLUGIN_ROOT}/references/runbook.md`) explains them in prose.
+come from three layers, most specific first: the repo's `.silkops/facts.json`, the plugin
+overlay, then `${CLAUDE_PLUGIN_ROOT}/facts/environment.json`; a new fact goes in the repo's file.
 
 ## Inputs
 
