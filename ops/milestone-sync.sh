@@ -65,6 +65,7 @@ N="$(printf '%s' "$SET" | jq -r '.issues | length')"
 # --- milestone ------------------------------------------------------------------
 MS=null
 if [ -n "$MS_TITLE" ]; then
+  # shellcheck disable=SC2016  # the backticks are markdown, not a command
   printf 'Milestone for `%s`. One issue per unit; identity by marker.\n' "$PLAN" >"$TMP/ms.md"
   MS="$(bash "$OPS/milestone-upsert.sh" --project "$PROJECT" --title "$MS_TITLE" --plan "$PLAN" --run "$RUN" --description-file "$TMP/ms.md" "${DRYARG[@]}")" \
     || { rc=$?; err "milestone-upsert failed for '$MS_TITLE'"; printf '%s\n' "$MS"; exit "$rc"; }
