@@ -5,7 +5,7 @@
   "description": "silkOps operating harness: GitLab dev-loop skills over glab-backed operations scripts",
   "author": {
     "name": "Aqua",
-    "email": "neku113@gmail.com"
+    "email": "dev@openzephyr.com"
   },
   "skills": "./skills",
   "repository": "https://github.com/OpenZephyr/SilkOps",
