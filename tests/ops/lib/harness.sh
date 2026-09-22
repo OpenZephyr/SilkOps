@@ -5,6 +5,8 @@
 PASS=0; FAIL=0
 # shellcheck disable=SC2034  # read by the sourcing suite
 PROJECT="void-realm-solutions/silkops-harness-eval"
+# the marker carries the plugin version; expected strings splice it in as '"$PLUGIN_V"'
+PLUGIN_V="$(jq -r .version "$ROOT/.claude-plugin/plugin.json")"
 pass() { echo "PASS $1"; PASS=$((PASS + 1)); }
 fail() { echo "FAIL $1: $2"; FAIL=$((FAIL + 1)); }
 # shellcheck disable=SC2329  # invoked via the EXIT trap

@@ -27,7 +27,7 @@ if [ "$(rc_of m2)" = 0 ] && out_of m2 | jq -e '.ok == true and .action == "creat
   && [ "$(writes_of m2)" = 1 ] && log_of m2 | grep -E -- '-X POST .*/milestones .*input=present' >/dev/null \
   && log_of m2 | grep -E -- '-X GET .*/milestones\?search=Harness%20v0\.1' >/dev/null \
   && body_of m2 1 | jq -e --arg o "$OPEN" --arg c "$CLOSE" '.body.title == "Harness v0.1"
-      and (.body.description | rtrimstr("\n")) == ("<!-- silkops: v=0.1.0 plan=plan.md unit=milestone run=r2 -->\n" + $o + "\nnew milestone body\n" + $c)' >/dev/null \
+      and (.body.description | rtrimstr("\n")) == ("<!-- silkops: v='"$PLUGIN_V"' plan=plan.md unit=milestone run=r2 -->\n" + $o + "\nnew milestone body\n" + $c)' >/dev/null \
   && ! log_of m2 | grep 'token=set' >/dev/null; then
   pass "M2 not found -> one POST with marker (unit=milestone) + managed region, exact-title search, session identity"
 else fail "M2" "rc=$(rc_of m2) out=$(out_of m2) body=$(body_of m2 1 2>/dev/null) log=$(log_of m2 | tr '\n' ';')"; fi
@@ -35,7 +35,7 @@ else fail "M2" "rc=$(rc_of m2) out=$(out_of m2) body=$(body_of m2 1 2>/dev/null)
 # M2b: marker only when no description file is given
 run_case m2b milestone -- --project "$PROJECT" "${ARGS[@]}"
 if [ "$(rc_of m2b)" = 0 ] && out_of m2b | jq -e '.action == "created"' >/dev/null \
-  && body_of m2b 1 | jq -e '.body.description | startswith("<!-- silkops: v=0.1.0 plan=plan.md unit=milestone run=r2 -->\n")' >/dev/null; then
+  && body_of m2b 1 | jq -e '.body.description | startswith("<!-- silkops: v='"$PLUGIN_V"' plan=plan.md unit=milestone run=r2 -->\n")' >/dev/null; then
   pass "M2b no --description-file -> description is the marker + empty managed region"
 else fail "M2b" "rc=$(rc_of m2b) body=$(body_of m2b 1 2>/dev/null)"; fi
 

@@ -24,7 +24,7 @@ else fail "N2" "rc=$(rc_of n2) out=$(out_of n2) writes=$(writes_of n2)"; fi
 run_case n3 note -- --project "$PROJECT" --issue 12 "${ARGS[@]}" --dedupe-key verify-2
 if [ "$(rc_of n3)" = 0 ] && out_of n3 | jq -e '.ok == true and .existing == false and .id == 803' >/dev/null && [ "$(writes_of n3)" = 1 ] \
   && log_of n3 | grep -E -- '-X POST .*/issues/12/notes .*input=present' >/dev/null \
-  && body_of n3 1 | jq -e '.body.body | startswith("<!-- silkops: v=0.1.0 plan=plan.md unit=U4 run=r2 -->\n<!-- silkops:key=verify-2 -->\n") and endswith("Verification passed.\n")' >/dev/null \
+  && body_of n3 1 | jq -e '.body.body | startswith("<!-- silkops: v='"$PLUGIN_V"' plan=plan.md unit=U4 run=r2 -->\n<!-- silkops:key=verify-2 -->\n") and endswith("Verification passed.\n")' >/dev/null \
   && ! log_of n3 | grep 'token=set' >/dev/null; then
   pass "N3 new dedupe key -> one POST carrying marker + key + body, session identity"
 else fail "N3" "rc=$(rc_of n3) out=$(out_of n3) body=$(body_of n3 1 2>/dev/null)"; fi

@@ -20,7 +20,7 @@ run_case m2 mr-none -- --project "$PROJECT" "${ARGS[@]}" --draft
 if [ "$(rc_of m2)" = 0 ] && out_of m2 | jq -e '.ok == true and .action == "created" and .iid == 7 and .head_pipeline_id == 501 and (.web_url | endswith("/merge_requests/7"))' >/dev/null \
   && [ "$(writes_of m2)" = 1 ] && log_of m2 | grep -E -- '-X POST .*/merge_requests .*input=present' >/dev/null \
   && body_of m2 1 | jq -e '.body.source_branch == "feat/u4" and .body.target_branch == "main" and .body.title == "Draft: U4 gap fillers"
-      and (.body.description | startswith("<!-- silkops: v=0.1.0 plan=plan.md unit=U4 run=r2 -->\n<!-- silkops:managed -->\nnew mr body\n<!-- /silkops:managed -->"))' >/dev/null \
+      and (.body.description | startswith("<!-- silkops: v='"$PLUGIN_V"' plan=plan.md unit=U4 run=r2 -->\n<!-- silkops:managed -->\nnew mr body\n<!-- /silkops:managed -->"))' >/dev/null \
   && ! log_of m2 | grep 'token=set' >/dev/null; then
   pass "M2 no open MR -> created (Draft: prefix, marker + managed region), head pipeline reported"
 else fail "M2" "rc=$(rc_of m2) out=$(out_of m2) body=$(body_of m2 1 2>/dev/null) log=$(log_of m2 | tr '\n' ';')"; fi
