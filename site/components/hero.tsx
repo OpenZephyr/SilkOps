@@ -1,6 +1,6 @@
 import { InstallBlock } from './install-block'
 
-const GITHUB_URL = 'https://github.com/silkops/silkops-harness'
+const GITHUB_URL = 'https://github.com/OpenZephyr/SilkOps'
 
 export function Hero() {
   return (

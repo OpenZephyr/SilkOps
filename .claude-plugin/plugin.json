@@ -8,6 +8,6 @@
     "email": "neku113@gmail.com"
   },
   "skills": "./skills",
-  "repository": "https://gitlab.com/void-realm-solutions/silkops-harness",
+  "repository": "https://github.com/OpenZephyr/SilkOps",
   "license": "MIT"
 }

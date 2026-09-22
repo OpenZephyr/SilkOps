@@ -6,8 +6,8 @@ facts, and files issues from a plan without hand-written API glue. It never merg
 
 ## Install
 
-Claude Code: add this repo as a plugin marketplace and install `silkops-harness`, or unpack the
-release asset `silkops-harness-X.Y.Z.tar.gz` from the GitHub Release. Needs `glab`, `jq`,
+Claude Code: `claude plugin marketplace add OpenZephyr/SilkOps`, then install `silkops-harness`;
+or unpack the release asset `silkops-harness-X.Y.Z.tar.gz` from the GitHub Release. Needs `glab`, `jq`,
 `curl`, Python 3.9. Tokens come from the environment only (`SILKOPS_CI_TOKEN`,
 `SILKOPS_SETTINGS_TOKEN`); nothing is ever placed in argv or a URL.
 
@@ -46,8 +46,8 @@ Code Excalidraw extension; export as SVG with "Embed scene" and save over the fi
 ## Develop
 
 `bash tests/run.sh` runs tier 1 (offline, fixture-driven; gates every change). `AGENTS.md`
-holds the conventions; `CLAUDE.md` only imports it. Source of truth is GitLab; GitHub is a
-main-only mirror, and `ops/inbox.sh --repo <owner/name>` lists what people file there.
+holds the conventions; `CLAUDE.md` only imports it. Source of truth is GitLab; GitHub (`OpenZephyr/SilkOps`) is a
+main-only mirror, and `ops/inbox.sh --repo OpenZephyr/SilkOps` lists what people file there.
 
 Release: tag `silkops-harness--vX.Y.Z` on main (CI publishes the asset to GitLab), then
-`scripts/github-release.sh --repo <owner/name> --tag <tag>` creates the GitHub Release.
+`scripts/github-release.sh --repo OpenZephyr/SilkOps --tag <tag>` creates the GitHub Release.
