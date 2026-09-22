@@ -29,6 +29,17 @@ tier1:
     paths: [references/runbook.md]
     expire_in: 30 days
 
+tier1-py39:
+  # ops/*.py target Python 3.9 (AGENTS.md); tier1's debian image runs 3.11, so a 3.10+ construct
+  # would pass there and fail on a 3.9 runtime (#20). The unittest step alone, on 3.9.
+  stage: test
+  image: python:3.9-slim
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq --no-install-recommends jq >/dev/null
+  script:
+    - python3 --version
+    - python3 -m unittest discover -s tests/ops -p 'test_*.py'
+
 manifest:
   stage: test
   image: node:22-bookworm-slim
