@@ -21,13 +21,11 @@ writes; never edits a closed issue.
 
 1. **Read the review result.** Extract for each accepted number: title, file:line, summary,
    suggested fix. The dedupe key is `<review run id or result basename>-<n>`.
-2. **Upsert one issue per finding.**
-   `${CLAUDE_PLUGIN_ROOT}/ops/issue-upsert.sh --project P --marker-unit residual-<key>
-   --plan <result basename> --run <run-id> --title "<finding title>" --body-file <f>
-   --milestone <title> --labels residual,silkops`.
-   Body (inside the managed region): finding summary, location, suggested fix, "Source:
-   <review result path>". A second run with the same key yields `action: unchanged` or an
-   existing issue — report "already filed as #n"; never create a duplicate.
+2. **One call for the whole set.** Write `{"plan": "adhoc-<result basename>", "milestone":
+   "<title>", "issues": [{"unit": "residual-<key>", "title", "body", "labels": ["residual"]}]}`
+   to a scratch file and run `${CLAUDE_PLUGIN_ROOT}/ops/milestone-sync.sh --project P --issues
+   <file> --run <run-id>`. Body: finding summary, location, suggested fix, "Source: <path>". The
+   report lists finding → iid → action; a second run yields `unchanged`, never a duplicate.
 3. **Proof notes.** When the operator says a residual is fixed (MR or commit named):
    `ops/note.sh --project P --issue <iid> --body-file <proof> --marker-unit residual-<key>
    --plan <b> --run <run-id> --dedupe-key proof-<sha>`; then close the issue with

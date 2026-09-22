@@ -23,9 +23,9 @@ set -euo pipefail
 # shellcheck source=lib/glab.sh
 . "$(dirname "$0")/lib/glab.sh"
 
-usage() { fail "$EX_USAGE" usage "usage: issue-upsert.sh --project <group/project> --marker-unit <U-ID> --plan <basename> --run <id> --title <t> --body-file <f> [--milestone <title|id>] [--labels a,b] [--dry-run]${1:+ — $1}"; }
+usage() { fail "$EX_USAGE" usage "usage: issue-upsert.sh --project <group/project> --marker-unit <U-ID> --plan <basename> --run <id> --title <t> --body-file <f> [--milestone <title|id>] [--labels a,b] [--assignee <username>] [--due-date YYYY-MM-DD] [--dry-run]${1:+ — $1}"; }
 
-PROJECT=""; UNIT=""; PLAN=""; RUN=""; TITLE=""; BODY_FILE=""; MILESTONE=""; LABELS=""; DRY=false
+PROJECT=""; UNIT=""; PLAN=""; RUN=""; TITLE=""; BODY_FILE=""; MILESTONE=""; LABELS=""; DRY=false; ASSIGNEE=""; DUE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --project) [ $# -ge 2 ] || usage "--project needs a value"; PROJECT="$2"; shift 2 ;;
@@ -37,6 +37,8 @@ while [ $# -gt 0 ]; do
     --body-file) [ $# -ge 2 ] || usage; BODY_FILE="$2"; shift 2 ;;
     --milestone) [ $# -ge 2 ] || usage; MILESTONE="$2"; shift 2 ;;
     --labels) [ $# -ge 2 ] || usage; LABELS="$2"; shift 2 ;;
+    --assignee) [ $# -ge 2 ] || usage; ASSIGNEE="$2"; shift 2 ;;      # username (v0.2 U9, #34)
+    --due-date) [ $# -ge 2 ] || usage; DUE="$2"; shift 2 ;;           # YYYY-MM-DD
     --dry-run) DRY=true; shift ;;
     -h|--help) usage ;;
     *) usage "unknown argument: $1" ;;
@@ -73,6 +75,20 @@ lookup() {
 # whole line of .description matches re (a marker merely quoted mid-line does not count).
 JQ_DEFS='def rq: gsub("(?<c>[\\\\.^$*+?()\\[\\]{}|])"; "\\\(.c)");
   def marker_line(re): (.description // "") | split("\n") | map(rtrimstr("\r")) | any(test(re));'
+
+[ -z "$DUE" ] || [[ "$DUE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || usage "--due-date must be YYYY-MM-DD"
+# --- assignee → id (#34) ------------------------------------------------------
+ASSIGNEE_IDS=null
+if [ -n "$ASSIGNEE" ]; then
+  lookup "look up user '$ASSIGNEE'" "users?username=$(urlenc "$ASSIGNEE")" "$TMP/users.json"
+  AID="$(jq -r --arg u "$ASSIGNEE" '[.[] | select(.username == $u)] | first | .id // "null"' "$TMP/users.json")"
+  [ "$AID" != null ] || fail "$EX_NOT_FOUND" not_found "no GitLab user named $ASSIGNEE (a dead @mention would be silent; refusing)"
+  ASSIGNEE_IDS="[$AID]"
+fi
+# EXTRA: fields both the update and the create carry
+EXTRA="$(jq -cn --argjson a "$ASSIGNEE_IDS" --arg d "$DUE" '(if $a != null then {assignee_ids: $a} else {} end) + (if $d != "" then {due_date: $d} else {} end)')"
+# read_back <resp-json>: assignee username and due date as GitLab stored them
+read_back() { printf '%s' "$1" | jq -c '{assignee: (.assignees[0].username // null), due_date: (.due_date // null)}'; }
 
 # --- milestone → id ---------------------------------------------------------
 MILESTONE_ID=null
@@ -143,9 +159,9 @@ if [ "$FOUND" != null ]; then
     exit 0
   fi
   printf '%s' "$PLANNED" | jq -c --arg labels "$LABELS" --argjson ms "$MILESTONE_ID" \
-    '{description: .description} + (if $labels != "" then {add_labels: $labels} else {} end) + (if $ms != null then {milestone_id: $ms} else {} end)' >"$TMP/body.json"
+    --argjson extra "$EXTRA" '{description: .description} + (if $labels != "" then {add_labels: $labels} else {} end) + (if $ms != null then {milestone_id: $ms} else {} end) + $extra' >"$TMP/body.json"
   RESP="$(glab_ro api -X PUT "projects/$ENC/issues/$IID" --input "$TMP/body.json")" || fail "$EX_OTHER" update_failed "could not update issue #$IID" "$IDENT"
-  result "$(jq -cn --argjson i "$IDENT" --argjson r "$RESP" --argjson f "$FOUND" '$i + {action: "updated", web_url: ($r.web_url // $i.web_url), prior: {description: ($f.description // "")}}')"
+  result "$(jq -cn --argjson i "$IDENT" --argjson r "$RESP" --argjson f "$FOUND" --argjson rb "$(read_back "$RESP")" '$i + {action: "updated", web_url: ($r.web_url // $i.web_url), prior: {description: ($f.description // "")}} + $rb')"
   exit 0
 fi
 
@@ -160,7 +176,7 @@ if [ "$DRY" = true ]; then
   result "$(jq -cn --arg t "$TITLE" --arg d "$DESC" --arg l "$ALL_LABELS" --argjson ms "$MILESTONE_ID" '{dry_run: true, action: "created", current: null, proposed: {title: $t, description: $d, labels: $l, milestone_id: $ms}}')"
   exit 0
 fi
-jq -cn --arg t "$TITLE" --arg d "$DESC" --arg l "$ALL_LABELS" --argjson ms "$MILESTONE_ID" \
-  '{title: $t, description: $d, labels: $l} + (if $ms != null then {milestone_id: $ms} else {} end)' >"$TMP/body.json"
+jq -cn --arg t "$TITLE" --arg d "$DESC" --arg l "$ALL_LABELS" --argjson ms "$MILESTONE_ID" --argjson extra "$EXTRA" \
+  '{title: $t, description: $d, labels: $l} + (if $ms != null then {milestone_id: $ms} else {} end) + $extra' >"$TMP/body.json"
 RESP="$(glab_ro api -X POST "projects/$ENC/issues" --input "$TMP/body.json")" || fail "$EX_OTHER" create_failed "could not create the issue in $PROJECT"
-result "$(printf '%s' "$RESP" | jq -c --arg id "$IDENTITY" --argjson m "$MARKER_ON" '{action: "created", iid: .iid, web_url: .web_url, state: .state, identity: $id, marker: $m}')"
+result "$(printf '%s' "$RESP" | jq -c --arg id "$IDENTITY" --argjson m "$MARKER_ON" --argjson rb "$(read_back "$RESP")" '{action: "created", iid: .iid, web_url: .web_url, state: .state, identity: $id, marker: $m} + $rb')"
