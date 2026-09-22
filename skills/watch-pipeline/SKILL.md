@@ -26,9 +26,9 @@ web_url, first_failure), `retried`, `resume_hint`. Never merges: "ready" is the 
      `first_failure`, the redacted `root_cause` lines. With `--note` the triage is on the MR.
    - `canceled|skipped|manual`: terminal, not ready; name the manual job a human must start.
    - `superseded`: report the old outcome, switch to `head_pipeline_id`; no retry of the old one.
-   - `errors[]` non-empty: a jobs listing failed; the job snapshot is stale, not green.
-3. Retry once, with `--retry`, only when every failed job is `transient` and `retry_safe`, the
-   pipeline is current, and `retry_count` is 0. Exit 6 means the guard refused: report, stop.
+   - `errors[]` non-empty: a jobs listing failed; the snapshot is stale, not green.
+3. Retry once (`--retry`) only when every failed job is `transient` and `retry_safe`, the
+   pipeline is current, and `retry_count` is 0. Exit 6: the guard refused; report, stop.
 4. Report: pipeline id and URL, verdict, per-job triage, retries, next human step.
 
 ## Guardrails
