@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Fake `gh` for offline tests: logs argv to $GH_STUB_LOG and serves $GH_STUB_DIR/<name>.json,
+# where <name> is the first `api` path segment after repos/<owner>/<repo>/ (issues, pulls) or the
+# subcommand (release). Never touches the network.
+set -uo pipefail
+[ -z "${GH_STUB_LOG:-}" ] || printf 'argv:%s\n' "$(printf ' %s' "$@")" >>"$GH_STUB_LOG"
+case "${1:-}" in
+  api)
+    path=""; for a in "$@"; do case "$a" in repos/*) path="$a" ;; esac; done
+    name="$(printf '%s' "$path" | sed -E 's|^repos/[^/]+/[^/]+/([a-z]+).*|\1|')"
+    f="${GH_STUB_DIR:-}/$name.json"; [ -f "$f" ] || { echo "gh-stub: no fixture for $path" >&2; exit 1; }
+    cat "$f" ;;
+  release) echo '{"url":"https://github.com/example/silkops-harness/releases/tag/silkops-harness--v0.2.0"}' ;;
+  *) echo "gh-stub: unsupported: $*" >&2; exit 1 ;;
+esac

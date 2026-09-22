@@ -31,7 +31,7 @@ run_case u3 upsert-notfound -- --project "$PROJECT" "${ARGS[@]}" --labels harnes
 if [ "$(rc_of u3)" = 0 ] && out_of u3 | jq -e '.ok == true and .action == "created" and .iid == 13 and (.web_url | endswith("/issues/13"))' >/dev/null \
   && [ "$(writes_of u3)" = 1 ] && log_of u3 | grep -E -- '-X POST .*/issues .*input=present' >/dev/null \
   && body_of u3 1 | jq -e --arg o "$OPEN" --arg c "$CLOSE" '.body.title == "U4 gap fillers" and .body.milestone_id == 77 and (.body.labels | split(",") | index("u4") != null)
-      and (.body.description | startswith("<!-- silkops: v=0.1.0 plan=plan.md unit=U4 run=r2 -->\n" + $o + "\nnew body line\n" + $c)) and (.body.description | rtrimstr("\n") | endswith($c))' >/dev/null \
+      and (.body.description | startswith("<!-- silkops: v='"$PLUGIN_V"' plan=plan.md unit=U4 run=r2 -->\n" + $o + "\nnew body line\n" + $c)) and (.body.description | rtrimstr("\n") | endswith($c))' >/dev/null \
   && ! log_of u3 | grep 'token=set' >/dev/null; then
   pass "U3 not found -> created via --input with marker + managed region and nothing else, u4 label, milestone resolved"
 else fail "U3" "rc=$(rc_of u3) out=$(out_of u3) body=$(body_of u3 1 2>/dev/null) log=$(log_of u3 | tr '\n' ';')"; fi

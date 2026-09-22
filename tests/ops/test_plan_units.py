@@ -12,7 +12,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 OPS = os.path.join(REPO_ROOT, "ops")
 TRACES = os.path.join(REPO_ROOT, "tests", "fixtures", "traces")
 FACTS = os.path.join(REPO_ROOT, "facts", "environment.json")
-CICD_PLANS = "/Users/poelyte/Documents/a-Dev/ci-cd/docs/plans"
+CICD_PLANS = os.path.join(REPO_ROOT, "tests", "fixtures", "plans")  # unit sections of the two real plans (#57)
 
 
 def trace(name):
@@ -38,7 +38,6 @@ def by_id(out):
     return {u["id"]: u for u in out["units"]}
 
 
-@unittest.skipUnless(os.path.exists(FACTORY), "ci-cd checkout not present")
 class FactoryPlan(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -70,7 +69,6 @@ class FactoryPlan(unittest.TestCase):
         self.assertEqual(self.out["index_present"], False)
 
 
-@unittest.skipUnless(os.path.exists(HARNESS), "ci-cd checkout not present")
 class HarnessPlan(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

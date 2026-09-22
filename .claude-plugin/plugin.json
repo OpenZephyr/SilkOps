@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "silkops-harness",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "silkOps operating harness: GitLab dev-loop skills over glab-backed operations scripts",
   "author": {
     "name": "Aqua",
@@ -9,5 +9,5 @@
   },
   "skills": "./skills",
   "repository": "https://gitlab.com/void-realm-solutions/silkops-harness",
-  "license": "Proprietary"
+  "license": "MIT"
 }
