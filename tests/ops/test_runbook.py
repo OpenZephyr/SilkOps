@@ -64,11 +64,11 @@ class Runbook(unittest.TestCase):
             self.assertLess(text.index("### `repo-fact`"), text.index("### `core-only`"))
             self.assertEqual(json.loads(r.stdout)["facts"], 2)
 
-    def test_snippet_matches_ci_cd_claude_md_block(self):
-        snippet = open(os.path.join(ROOT, "references", "claude-md-snippet.md")).read()
-        self.assertIn("`ship-mr`", snippet)
-        self.assertIn("`file-residuals`", snippet)
-        self.assertIn("never merges", snippet)
+    def test_claude_md_is_the_agents_md_import(self):
+        # KD4 (v0.2): AGENTS.md is the conventions file; CLAUDE.md only imports it.
+        self.assertEqual(open(os.path.join(ROOT, "CLAUDE.md")).read().strip(), "@AGENTS.md")
+        self.assertTrue(os.path.exists(os.path.join(ROOT, "AGENTS.md")))
+        self.assertFalse(os.path.exists(os.path.join(ROOT, "references", "claude-md-snippet.md")))
 
 
 if __name__ == "__main__":

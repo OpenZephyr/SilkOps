@@ -7,7 +7,7 @@
 #   `silkops_marker`, `facts_paths`, `urlenc`, and the provider seam (SILKOPS_PROVIDER=gitlab).
 #
 # Contract: exactly one JSON object on stdout, human text on stderr, fixed exit
-# codes (CLAUDE.md). Tokens come from the environment only and are never
+# codes (AGENTS.md). Tokens come from the environment only and are never
 # printed, never placed in argv, never embedded in URLs.
 set -euo pipefail
 

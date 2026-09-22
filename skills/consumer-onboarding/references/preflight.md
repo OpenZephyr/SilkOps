@@ -12,7 +12,7 @@ Report every line before Phase A. A ✗ on a settings line stops the run until r
 | Consumer already allow-listed | `allowlist.sh --project <factory> get` | reported either way |
 | Existing schedules | `schedule.sh --project <consumer> list` | owner and cron reported; any sub-daily cron flagged |
 | Protected-branch principals on the consumer | informational from token-check `--for session` | reported; the harness never edits them |
-| Harness snippet in consumer `CLAUDE.md` | grep for `ship-mr` in the consumer's `CLAUDE.md` | present / to add in Phase B |
+| Conventions block in consumer `AGENTS.md` | `ops/conventions.sh --dir <checkout>` reports `unchanged` | present / to add in Phase B |
 
 Rotation note: schedules created by the harness belong to the token's bot user. Rotate the
 token with the rotate endpoint; revoking and recreating it deactivates those schedules.
