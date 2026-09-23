@@ -17,6 +17,8 @@ set -euo pipefail
 . "$(dirname "$0")/lib/token.sh"
 # shellcheck source=lib/glab.sh
 . "$(dirname "$0")/lib/glab.sh"
+# shellcheck source=lib/provider.sh
+. "$(dirname "$0")/lib/provider.sh"
 
 usage() { fail "$EX_USAGE" usage "usage: allowlist.sh --project <factory> (get | add --consumer <group/project> [--group]) [--dry-run]${1:+ — $1}"; }
 
@@ -34,6 +36,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 require_project "$PROJECT"
+p_gitlab_only "allowlist.sh"
 [ -n "$CMD" ] || usage "subcommand required: get | add"
 require_ci_token   # top level, so the exit-3 JSON and message reach the real streams (the wrappers re-check)
 

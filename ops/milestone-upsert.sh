@@ -21,6 +21,8 @@ set -euo pipefail
 . "$(dirname "$0")/lib/token.sh"
 # shellcheck source=lib/glab.sh
 . "$(dirname "$0")/lib/glab.sh"
+# shellcheck source=lib/provider.sh
+. "$(dirname "$0")/lib/provider.sh"
 
 usage() { fail "$EX_USAGE" usage "usage: milestone-upsert.sh --project <group/project> --title <t> --plan <basename> --run <id> [--description-file <f>] [--marker-unit <unit>] [--due-date YYYY-MM-DD] [--start-date YYYY-MM-DD] [--dry-run]${1:+ — $1}"; }
 
@@ -48,7 +50,6 @@ if [ -z "$PLAN" ] || [ -z "$RUN" ]; then usage "--plan and --run are required (t
 if [ -n "$DESC_FILE" ]; then [ -f "$DESC_FILE" ] || usage "--description-file must name a readable file"; fi
 require_ci_token   # top level, so the exit-3 JSON and message reach the real streams (the wrappers re-check)
 
-ENC="$(urlenc "$PROJECT")"
 for d in "$DUE" "$START"; do [ -z "$d" ] || [[ "$d" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || usage "dates must be YYYY-MM-DD"; done
 EXTRA="$(jq -cn --arg d "$DUE" --arg s "$START" '(if $d != "" then {due_date: $d} else {} end) + (if $s != "" then {start_date: $s} else {} end)')"
 read_back() { printf '%s' "$1" | jq -c '{due_date: (.due_date // null), start_date: (.start_date // null)}'; }
@@ -59,7 +60,7 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/silkops-milestone.XXXXXX")"; trap 'rm -rf "$TM
 # --- find: exact title, this project only ------------------------------------
 # Called at top level, never inside $(...), so the failure JSON and message reach the real
 # streams. A failed search must never read as "not found" (that is how duplicates get created).
-api_get "projects/$ENC/milestones?search=$(urlenc "$TITLE")&state=all&per_page=100" >"$TMP/milestones.json" 2>"$TMP/lookup.err" \
+p_milestone_search "$PROJECT" "$TITLE" >"$TMP/milestones.json" 2>"$TMP/lookup.err" \
   || fail "$EX_OTHER" lookup_failed "could not search $PROJECT milestones for '$TITLE'; refusing to write without a successful lookup: $(redact <"$TMP/lookup.err" | tr '\n' ' ')"
 CANDS="$(jq -c --arg t "$TITLE" 'if type == "array" then [.[] | select(.title == $t)] else [] end' "$TMP/milestones.json")"
 [ "$(printf '%s' "$CANDS" | jq -r length)" -le 1 ] \
@@ -81,7 +82,7 @@ if [ "$FOUND" != null ]; then
   fi
   printf '%s' "$PLANNED" | jq -c --argjson extra "$EXTRA" '{description: .description} + $extra' >"$TMP/body.json"
   MID="$(printf '%s' "$FOUND" | jq -r '.id')"
-  RESP="$(glab_ro api -X PUT "projects/$ENC/milestones/$MID" --input "$TMP/body.json")" || fail "$EX_OTHER" update_failed "could not update milestone '$TITLE' (id $MID)" "$IDENT"
+  RESP="$(p_milestone_update "$PROJECT" "$MID" "$TMP/body.json")" || fail "$EX_OTHER" update_failed "could not update milestone '$TITLE' (id $MID)" "$IDENT"
   result "$(jq -cn --argjson i "$IDENT" --argjson r "$RESP" --argjson f "$FOUND" --argjson rb "$(read_back "$RESP")" '$i + {action: "updated", web_url: ($r.web_url // $i.web_url), prior: {description: ($f.description // "")}} + $rb')"
   exit 0
 fi
@@ -93,5 +94,5 @@ if [ "$DRY" = true ]; then
   exit 0
 fi
 jq -cn --arg t "$TITLE" --arg d "$DESC" --argjson extra "$EXTRA" '{title: $t, description: $d} + $extra' >"$TMP/body.json"
-RESP="$(glab_ro api -X POST "projects/$ENC/milestones" --input "$TMP/body.json")" || fail "$EX_OTHER" create_failed "could not create milestone '$TITLE' in $PROJECT"
+RESP="$(p_milestone_create "$PROJECT" "$TMP/body.json")" || fail "$EX_OTHER" create_failed "could not create milestone '$TITLE' in $PROJECT"
 result "$(printf '%s' "$RESP" | jq -c --argjson rb "$(read_back "$RESP")" '{action: "created", id: .id, iid: .iid, web_url: (.web_url // null), title: .title, state: (.state // null)} + $rb')"

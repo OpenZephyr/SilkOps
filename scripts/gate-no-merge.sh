@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Verification Contract gate: no merge verb, no merge endpoint, no protected-branch write, and no
 # push to a protected branch anywhere in skills/, ops/, or references/. The read in
-# ops/token-check.sh (informational can_merge/can_push) is the single sanctioned
-# protected_branches reference; anything else fails the gate.
+# ops/token-check.sh (informational can_merge/can_push) and the providers' read verb are the
+# sanctioned protected_branches references; anything else fails the gate.
 # `--self-test` feeds known evasions through the pattern and expects each to be caught.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 PATTERN='mr (merge|accept)|/merge([^_a-zA-Z]|$)|mergeRequestAccept|mergeRequestSetAutoMerge|merge_when_pipeline_succeeds|git push [^;|&]*(main|master|:refs/heads/)|protected_branches|branchRule'
-ALLOW='^ops/token-check\.sh:.*protected_branches'
+ALLOW='^ops/(token-check\.sh|lib/providers/[a-z]+\.sh):.*protected_branches'
 if [ "${1:-}" = "--self-test" ]; then
   fails=0
   while IFS= read -r line; do

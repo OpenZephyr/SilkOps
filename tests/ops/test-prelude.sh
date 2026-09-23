@@ -166,12 +166,12 @@ else
   fail "T10" "got '$(out_of t10)'"
 fi
 
-# --- T11: SILKOPS_PROVIDER=github -> exit 2 "provider not implemented"
-run_snippet t11 SILKOPS_PROVIDER=github -- '. "$PRELUDE"; echo reached'
+# --- T11: a provider with no verb file -> exit 2 "provider not implemented" when the seam loads
+run_snippet t11 SILKOPS_PROVIDER=bitbucket -- '. "$PRELUDE"; . "$TOKEN_LIB"; . "$GLAB_LIB"; . "$(dirname "$PRELUDE")/provider.sh"; echo reached'
 if [ "$(rc_of t11)" = 2 ] && err_of t11 | grep 'provider not implemented' >/dev/null \
   && ! grep -x reached "$SCRATCH/t11/out.log" >/dev/null \
   && out_of t11 | jq -e '.ok == false' >/dev/null; then
-  pass "T11 SILKOPS_PROVIDER=github fails usage (2): provider not implemented"
+  pass "T11 SILKOPS_PROVIDER=bitbucket fails usage (2) at the provider seam: provider not implemented"
 else
   fail "T11" "rc=$(rc_of t11) err=$(err_of t11 | tail -1)"
 fi

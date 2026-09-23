@@ -357,11 +357,11 @@ else fail "W20" "rc=$(rc_of w20) body=$(printf '%s' "$W20_BODY" | head -c 1200)"
 HITS="$(grep -rnE 'mr merge|/merge([^_a-zA-Z]|$)|protected_branches' "$ROOT/skills" "$ROOT/ops/watch.sh" 2>/dev/null)"
 if [ -z "$HITS" ]; then pass "L1 no merge verb / merge endpoint / protected_branches in skills/ or ops/watch.sh"
 else fail "L1" "$HITS"; fi
-OPS_HITS="$(grep -rnE 'mr merge|/merge([^_a-zA-Z]|$)|protected_branches' "$ROOT/ops" | grep -v '^[^:]*token-check.sh:' || true)"
-if [ -z "$OPS_HITS" ]; then pass "L2 the only ops/ mention of protected_branches is token-check.sh's informational read"
+OPS_HITS="$(grep -rnE 'mr merge|/merge([^_a-zA-Z]|$)|protected_branches' "$ROOT/ops" | grep -vE '^[^:]*(token-check\.sh|lib/providers/[a-z]+\.sh):' || true)"
+if [ -z "$OPS_HITS" ]; then pass "L2 the only ops/ mentions of protected_branches are token-check.sh's informational read and the providers' read verb"
 else fail "L2" "$OPS_HITS"; fi
 if command -v shellcheck >/dev/null 2>&1; then
-  if shellcheck -x -P SCRIPTDIR "$ROOT/ops/watch.sh" >"$SCRATCH/shellcheck.log" 2>&1; then pass "L3 shellcheck clean: ops/watch.sh"
+  if shellcheck -x -P "$ROOT/ops" "$ROOT/ops/watch.sh" >"$SCRATCH/shellcheck.log" 2>&1; then pass "L3 shellcheck clean: ops/watch.sh"
   else fail "L3" "$(cat "$SCRATCH/shellcheck.log")"; fi
 fi
 

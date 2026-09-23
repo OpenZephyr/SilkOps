@@ -24,6 +24,8 @@ set -euo pipefail
 . "$(dirname "$0")/lib/token.sh"
 # shellcheck source=lib/glab.sh
 . "$(dirname "$0")/lib/glab.sh"
+# shellcheck source=lib/provider.sh
+. "$(dirname "$0")/lib/provider.sh"
 
 usage() { fail "$EX_USAGE" usage "usage: variable.sh --project <group/project> (list | set --key K (--value-file <f> | env SILKOPS_VAR_VALUE) [--masked|--unmasked] [--protected|--unprotected] [--allow-unmask] [--allow-unprotect]) [--dry-run]${1:+ — $1}"; }
 
@@ -49,6 +51,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 require_project "$PROJECT"
+p_gitlab_only "variable.sh"
 [ -n "$CMD" ] || usage "subcommand required: list | set"
 # `list` reads under the session identity (glab_ro): in CI that needs SILKOPS_CI_TOKEN — check
 # at top level so the exit-3 JSON and message reach the real streams. `set` uses the settings
