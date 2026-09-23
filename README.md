@@ -6,8 +6,10 @@ facts, and files issues from a plan without hand-written API glue. It never merg
 
 ## Install
 
-Claude Code: `claude plugin marketplace add OpenZephyr/SilkOps`, then install `silkops-harness`;
-or unpack the release asset `silkops-harness-X.Y.Z.tar.gz` from the GitHub Release. Needs `glab`, `jq`,
+Any agent that reads SKILL.md: clone or unpack the release asset, then
+`bin/silkops install-agent <claude-code|codex|cursor|opencode|gemini-cli|all>` links the skills
+where that agent looks and puts `silkops` on your PATH (`~/.local/bin`). Claude Code can also use
+the plugin: `claude plugin marketplace add OpenZephyr/SilkOps`. Details per agent: `adapters/`. Needs `glab`, `jq`,
 `curl`, Python 3.9. Tokens come from the environment only (`SILKOPS_CI_TOKEN`,
 `SILKOPS_SETTINGS_TOKEN`); nothing is ever placed in argv or a URL.
 

@@ -21,7 +21,7 @@ verb_script() {
     *) return 1 ;;
   esac
 }
-VERBS="watch mr-upsert issue-upsert issue-link milestone-upsert milestone-sync note commit after-merge token-check registry schedule variable allowlist inbox conventions classify trace plan-units render-runbook redact doctor"
+VERBS="watch mr-upsert issue-upsert issue-link milestone-upsert milestone-sync note commit after-merge token-check registry schedule variable allowlist inbox conventions classify trace plan-units render-runbook redact doctor install-agent"
 
 usage() {
   echo "usage: silkops <verb> [args…]   verbs: $VERBS" >&2
@@ -38,6 +38,56 @@ case "$verb" in
   redact)
     # shellcheck source=../ops/lib/prelude.sh
     . "$ROOT/ops/lib/prelude.sh"; redact; exit 0 ;;
+  install-agent)
+    # install-agent <name|all> [--scope user|repo] [--dir <repo>] [--dry-run] (v0.3 U7, KTD7).
+    # Symlinks each skill directory where the agent discovers skills, links bin/silkops into
+    # ~/.local/bin (user scope), and writes the conventions import the agent reads. Idempotent.
+    # shellcheck source=../ops/lib/prelude.sh
+    . "$ROOT/ops/lib/prelude.sh"
+    AGENT="${1:-}"; [ -n "$AGENT" ] || fail "$EX_USAGE" usage "usage: silkops install-agent <claude-code|codex|cursor|opencode|gemini-cli|all> [--scope user|repo] [--dir <repo>] [--dry-run]"
+    shift; SCOPE=user; DIR="$PWD"; DRY=false
+    while [ $# -gt 0 ]; do case "$1" in --scope) SCOPE="$2"; shift 2 ;; --dir) DIR="$2"; shift 2 ;; --dry-run) DRY=true; shift ;; *) fail "$EX_USAGE" usage "unknown argument: $1" ;; esac; done
+    case "$SCOPE" in user|repo) ;; *) fail "$EX_USAGE" usage "--scope must be user or repo" ;; esac
+    # where each agent looks (checked against its docs on 2026-09-23; see adapters/<name>/README.md)
+    adapter() {  # adapter <name> → "skills_dir_user|skills_dir_repo|conventions"
+      case "$1" in
+        claude-code) echo "$HOME/.claude/skills|$DIR/.claude/skills|AGENTS.md (CLAUDE.md imports it)" ;;
+        codex)       echo "$HOME/.agents/skills|$DIR/.agents/skills|AGENTS.md" ;;
+        cursor)      echo "$HOME/.cursor/skills|$DIR/.cursor/skills|AGENTS.md" ;;
+        opencode)    echo "$HOME/.config/opencode/skills|$DIR/.opencode/skills|AGENTS.md" ;;
+        gemini-cli)  echo "$HOME/.gemini/skills|$DIR/.gemini/skills|GEMINI.md imports AGENTS.md" ;;
+        *) return 1 ;;
+      esac
+    }
+    link() {  # link <target> <linkpath> → changed|unchanged
+      if [ -L "$2" ] && [ "$(readlink "$2")" = "$1" ]; then echo unchanged; return; fi
+      [ "$DRY" = true ] || { mkdir -p "$(dirname "$2")"; rm -rf "$2"; ln -s "$1" "$2"; }; echo changed
+    }
+    one() {
+      local spec sd conv skills='[]' changed=false s n r binlink=null
+      spec="$(adapter "$1")" || fail "$EX_USAGE" usage "unknown agent: $1 (claude-code, codex, cursor, opencode, gemini-cli, all)"
+      if [ "$SCOPE" = user ]; then sd="${spec%%|*}"; else sd="$(printf '%s' "$spec" | cut -d'|' -f2)"; fi
+      conv="${spec##*|}"
+      for s in "$ROOT"/skills/*/; do
+        n="$(basename "$s")"; r="$(link "${s%/}" "$sd/$n")"; [ "$r" = unchanged ] || changed=true
+        skills="$(jq -cn --argjson a "$skills" --arg n "$n" --arg p "$sd/$n" --arg r "$r" '$a + [{name: $n, path: $p, state: $r}]')"
+      done
+      if [ "$SCOPE" = user ]; then binlink="$HOME/.local/bin/silkops"; r="$(link "$ROOT/bin/silkops" "$binlink")"; [ "$r" = unchanged ] || changed=true; fi
+      if [ "$SCOPE" = repo ] && [ "$DRY" = false ]; then
+        bash "$ROOT/ops/conventions.sh" --dir "$DIR" >/dev/null   # AGENTS.md block + CLAUDE.md import
+        if [ "$1" = gemini-cli ] && ! { [ -f "$DIR/GEMINI.md" ] && grep -qx '@AGENTS.md' "$DIR/GEMINI.md"; }; then printf '@AGENTS.md\n' >>"$DIR/GEMINI.md"; changed=true; fi
+      fi
+      jq -cn --arg a "$1" --arg sc "$SCOPE" --arg sd "$sd" --argjson sk "$skills" --arg conv "$conv" --argjson dry "$DRY" --argjson ch "$changed" \
+        --arg bin "${binlink:-}" '{agent: $a, scope: $sc, skills_dir: $sd, skills: $sk, bin: (if $bin == "" then null else $bin end), conventions: $conv, dry_run: $dry, linked: ($dry | not), unchanged: (($dry | not) and ($ch | not))}'
+    }
+    [ "$AGENT" = all ] || adapter "$AGENT" >/dev/null || fail "$EX_USAGE" usage "unknown agent: $AGENT (claude-code, codex, cursor, opencode, gemini-cli, all)"
+    if [ "$AGENT" = all ]; then
+      out='[]'; for a in claude-code codex cursor opencode gemini-cli; do out="$(jq -cn --argjson o "$out" --argjson x "$(one "$a")" '$o + [$x]')"; done
+      result "$(jq -cn --argjson o "$out" --argjson dry "$DRY" '{agents: $o, dry_run: $dry}')"
+    else
+      result "$(one "$AGENT")"
+    fi
+    exit 0 ;;
   doctor)
     # shellcheck source=../ops/lib/prelude.sh
     . "$ROOT/ops/lib/prelude.sh"
