@@ -45,6 +45,8 @@ own signatures travel with that project.
 
 ![one loop, ending at a human](docs/diagrams/ship-watch-loop.excalidraw.svg)
 
+![scripts speak verbs; a provider speaks its host](docs/diagrams/providers.excalidraw.svg)
+
 Excalidraw scenes under `docs/diagrams/`: `architecture` (skills over ops over glab),
 `fact-layers`, `ship-watch-loop`, `providers`. The `.excalidraw` file is the source; the `.excalidraw.svg`
 beside it is the export with the scene embedded, so either is editable. Open with the Excalidraw
