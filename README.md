@@ -25,7 +25,8 @@ or unpack the release asset `silkops-harness-X.Y.Z.tar.gz` from the GitHub Relea
 | `registry-ops` | zero-copy retag, digest compare, tag listing |
 | `consumer-onboarding` | connect a project to an image factory, one confirmation per settings write |
 
-Every script prints one JSON object on stdout, human text on stderr, fixed exit codes
+Skills call one entry command, `bin/silkops <verb>`, which runs the matching script from any
+agent or CI; `silkops doctor` says what the machine has. Every script prints one JSON object on stdout, human text on stderr, fixed exit codes
 (`AGENTS.md`). `SILKOPS_MARKER=off` makes every write anonymous for repos that must not name
 the tool.
 

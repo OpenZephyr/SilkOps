@@ -7,7 +7,7 @@ argument-hint: "<paths...> [--trailers none|repo]"
 # commit
 
 Result: one JSON line `{sha, subject, files[], trailers_removed, branch, trailers}` from
-`${CLAUDE_PLUGIN_ROOT}/ops/commit.sh`. Refused (exit 7) on the default branch, on a detached
+`silkops commit`. Refused (exit 7) on the default branch, on a detached
 HEAD, or when the subject breaks the repo's style. Never pushes.
 
 ## Steps
@@ -20,7 +20,7 @@ HEAD, or when the subject breaks the repo's style. Never pushes.
 3. Trailers policy: `--trailers repo` only when the repo's `AGENTS.md` asks for attribution
    lines and the project is in the operator's own group (`token-check.sh` reports the group).
    Otherwise the default `none` strips any that slipped in.
-4. `ops/commit.sh --message-file <f> --path <p> [--path <p>]... [--trailers none|repo]`.
+4. `silkops commit --message-file <f> --path <p> [--path <p>]... [--trailers none|repo]`.
    One commit per reviewable step; two commits when a reviewer may want to drop one.
 5. Report the sha and subject. Hand off to `ship-mr` when the branch is ready.
 

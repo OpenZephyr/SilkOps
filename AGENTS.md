@@ -15,6 +15,8 @@ This file is read by every agent; `CLAUDE.md` only imports it.
 
 ## Scripts (`ops/`)
 
+- `bin/silkops <verb> …` is the entry command every skill uses (`silkops watch --project P --mr 7`);
+  it runs the matching `ops/` script from any cwd or agent. `silkops doctor` reports the machine.
 - Bash for operations, Python 3.9 stdlib for parsers. Dependencies: `glab`, `jq`, `curl`,
   the stock interpreter. Nothing else. Structured inputs are JSON (no YAML parser exists).
 - Every script sources `ops/lib/prelude.sh` (`set -euo pipefail`, no shell tracing, redaction).

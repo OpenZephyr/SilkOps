@@ -6,7 +6,7 @@ argument-hint: "<retag|digest|tags> <image> [<tag> [<new-tag>]] [--project <grou
 
 # registry-ops
 
-Result: one JSON line from `${CLAUDE_PLUGIN_ROOT}/ops/registry.sh --project P <verb> …`: `tags` (tag
+Result: one JSON line from `silkops registry --project P <verb> …`: `tags` (tag
 list with digests), `digest` (one manifest digest), `retag` (`source_digest`, `target_digest`,
 zero blob uploads). Only `retag` is a settings write; the settings token is injected for that call.
 
@@ -15,7 +15,7 @@ zero blob uploads). Only `retag` is a settings write; the settings token is inje
 - `tags <image>`: listing lags a fresh push by seconds (fact `registry-listing-lag`); a missing
   just-pushed tag means wait and run once more.
 - `digest <image> <tag>`: to compare two tags run it twice; equal digests are one image, two names.
-- `retag <image> <tag> <new-tag>`: first `ops/token-check.sh --project P --for settings` (exit 4
+- `retag <image> <tag> <new-tag>`: first `silkops token-check --project P --for settings` (exit 4
   names who to ask). Then `--dry-run`, show source digest, target tag and whether it exists,
   confirm, apply. An existing target is refused (exit 7): tags are immutable, never delete-and-retag.
 
