@@ -26,5 +26,6 @@ exit 7 when the MR is not merged yet.
 
 ## Guardrails
 
+- Hosts: on GitHub the merged change is a pull request and the default-branch pipeline is a workflow run.
 - No merge, no issue close, no force; `--ff-only` and `branch -d` only.
 - Session identity; `--project` explicit on every call.

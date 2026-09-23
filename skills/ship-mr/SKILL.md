@@ -34,5 +34,6 @@ never merges and never commits; the `commit` skill runs first.
 
 ## Guardrails
 
+- Hosts: on GitHub the MR is a pull request and `iid` is its number; `runs[]` are its workflow runs (`docs/providers.md`).
 - No merge call of any kind; never push the default branch; never force-push.
 - `--project` explicit on every call; session identity, never the settings token.
