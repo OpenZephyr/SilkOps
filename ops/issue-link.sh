@@ -16,6 +16,8 @@ set -euo pipefail
 . "$(dirname "$0")/lib/token.sh"
 # shellcheck source=lib/glab.sh
 . "$(dirname "$0")/lib/glab.sh"
+# shellcheck source=lib/provider.sh
+. "$(dirname "$0")/lib/provider.sh"
 
 usage() { fail "$EX_USAGE" usage "usage: issue-link.sh --project <group/project> --source <iid> --target <iid> [--type blocks|relates_to] [--dry-run]${1:+ — $1}"; }
 
@@ -38,11 +40,9 @@ require_project "$PROJECT"
 case "$TYPE" in blocks|relates_to) ;; *) usage "--type must be blocks or relates_to (got: $TYPE)" ;; esac
 require_ci_token   # top level, so the exit-3 JSON and message reach the real streams (the wrappers re-check)
 
-ENC="$(urlenc "$PROJECT")"
-PROJ="$(api_get "projects/$ENC" 2>/dev/null)" || fail "$EX_NOT_FOUND" not_found "project not found or not visible: $PROJECT"
+PROJ="$(p_project_get "$PROJECT" 2>/dev/null)" || fail "$EX_NOT_FOUND" not_found "project not found or not visible: $PROJECT"
 PID="$(printf '%s' "$PROJ" | jq -r '.id')"
-LINKS_PATH="projects/$ENC/issues/$SOURCE/links"
-LINKS="$(api_get "$LINKS_PATH" 2>/dev/null)" || fail "$EX_NOT_FOUND" not_found "source issue #$SOURCE not found in $PROJECT"
+LINKS="$(p_issue_links "$PROJECT" "$SOURCE" 2>/dev/null)" || fail "$EX_NOT_FOUND" not_found "source issue #$SOURCE not found in $PROJECT"
 
 BASE="$(jq -cn --argjson s "$SOURCE" --argjson t "$TARGET" --arg rt "$TYPE" '{source_iid: $s, target_iid: $t, requested_type: $rt}')"
 EXISTING="$(printf '%s' "$LINKS" | jq -c --argjson pid "$PID" --argjson t "$TARGET" '[.[] | select(.project_id == $pid and .iid == $t)] | first // null')"
@@ -56,7 +56,7 @@ if [ "$DRY" = true ]; then
 fi
 
 ERRF="$(mktemp "${TMPDIR:-/tmp}/silkops-link.XXXXXX")"; trap 'rm -f "$ERRF"' EXIT
-post() { glab_ro api -X POST "$LINKS_PATH" -f "target_project_id=$PID" -f "target_issue_iid=$TARGET" -f "link_type=$1" 2>"$ERRF"; }
+post() { p_issue_link_post "$PROJECT" "$SOURCE" "$PID" "$TARGET" "$1" 2>"$ERRF"; }
 
 FALLBACK=null; FINAL="$TYPE"
 if ! OUT="$(post "$TYPE")"; then
@@ -66,7 +66,7 @@ if ! OUT="$(post "$TYPE")"; then
     OUT="$(post relates_to)" || fail "$EX_OTHER" link_failed "could not create the fallback relates_to link: $(cat "$ERRF")" "$BASE"
     FALLBACK='"relates_to"'; FINAL=relates_to
   elif [[ "$ERRTXT" =~ 409|Conflict ]]; then
-    LINKS="$(api_get "$LINKS_PATH" 2>/dev/null || echo '[]')"
+    LINKS="$(p_issue_links "$PROJECT" "$SOURCE" 2>/dev/null || echo '[]')"
     EXISTING="$(printf '%s' "$LINKS" | jq -c --argjson pid "$PID" --argjson t "$TARGET" '[.[] | select(.project_id == $pid and .iid == $t)] | first // {link_type: null}')"
     result "$(jq -cn --argjson b "$BASE" --argjson e "$EXISTING" '$b + {existing: true, link_type: $e.link_type}')"
     exit 0

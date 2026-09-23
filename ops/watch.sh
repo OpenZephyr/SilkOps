@@ -48,6 +48,8 @@ set -euo pipefail
 . "$(dirname "$0")/lib/token.sh"
 # shellcheck source=lib/glab.sh
 . "$(dirname "$0")/lib/glab.sh"
+# shellcheck source=lib/provider.sh
+. "$(dirname "$0")/lib/provider.sh"
 
 usage() { fail "$EX_USAGE" usage "usage: watch.sh --project <group/project> (--mr <iid> [--pipeline <id>] | --pipeline <id>) [--wait <s>] [--interval <s>] [--retry] [--note] [--plan <basename>] [--run <id>]${1:+ — $1}"; }
 
@@ -80,14 +82,13 @@ require_project "$PROJECT"
 if [ "$NOTE" = true ] && [ -z "$MR" ]; then usage "--note needs --mr (notes are posted on the merge request)"; fi
 require_ci_token   # top level, so the exit-3 JSON and message reach the real streams (the wrappers re-check)
 
-ENC="$(urlenc "$PROJECT")"
 OPS="$SILKOPS_ROOT/ops"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/silkops-watch.XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
 SLEEP_S="${SILKOPS_WATCH_SLEEP:-$INTERVAL}"
 
 # --- resolve the checkpoint --------------------------------------------------
 MRJ=null; DMS=null; HEAD_ID=null; MR_URL=null
-fetch_mr() { api_get "projects/$ENC/merge_requests/$MR"; }
+fetch_mr() { p_mr_get "$PROJECT" "$MR"; }
 read_mr() {  # sets DMS, HEAD_ID, MR_URL from $MRJ
   DMS="$(printf '%s' "$MRJ" | jq -c '.detailed_merge_status // null')"
   HEAD_ID="$(printf '%s' "$MRJ" | jq -c '.head_pipeline.id // null')"
@@ -220,7 +221,7 @@ fetch_jobs() {
   local page=1 acc='[]' chunk n
   : >"$TMP/jobs.err"
   while :; do
-    chunk="$(api_get "projects/$ENC/pipelines/$PIPE_ID/jobs?include_retried=true&per_page=$JOBS_PER_PAGE&page=$page" 2>>"$TMP/jobs.err")" || return 1
+    chunk="$(p_run_jobs "$PROJECT" "$PIPE_ID" "$JOBS_PER_PAGE" "$page" 2>>"$TMP/jobs.err")" || return 1
     n="$(printf '%s' "$chunk" | jq -r 'if type == "array" then length else -1 end' 2>/dev/null)" || n=-1
     [ "$n" -ge 0 ] || { echo "jobs page $page is not a JSON array" >>"$TMP/jobs.err"; return 1; }
     acc="$(jq -cn --argjson a "$acc" --argjson b "$chunk" '$a + $b')"
@@ -241,7 +242,7 @@ resolve_mr_from_pipeline() {
   if [[ "$ref" =~ ^refs/(merge)-requests/([0-9]+)/head$ ]]; then
     MR="${BASH_REMATCH[2]}"
   elif [ -n "$ref" ]; then
-    if cands="$(api_get "projects/$ENC/merge_requests?source_branch=$(urlenc "$ref")&state=opened&per_page=100")" \
+    if cands="$(p_mr_find_by_branch "$PROJECT" "$ref" 100)" \
       && [ "$(printf '%s' "$cands" | jq -r 'if type == "array" then length else 0 end')" = 1 ]; then
       MR="$(printf '%s' "$cands" | jq -r '.[0].iid')"
     fi
@@ -263,7 +264,7 @@ triage_job() {
   fr="$(printf '%s' "$job" | jq -c '.failure_reason // null')"
   wu="$(printf '%s' "$job" | jq -c '.web_url // null')"
   tf="$TMP/trace-$id.log"
-  if glab_ro api -X GET "projects/$ENC/jobs/$id/trace" >"$tf" 2>"$TMP/trace-$id.err"; then
+  if p_job_log "$PROJECT" "$id" >"$tf" 2>"$TMP/trace-$id.err"; then
     rc="$(python3 "$OPS/trace.py" root-cause "$tf" --lines "$ROOT_LINES")" || rc='{"lines":[],"exit_code":null}'
     lines="$(printf '%s' "$rc" | jq -r '.lines[]' | redact | jq -Rc . | jq -sc .)"
     exit_code="$(printf '%s' "$rc" | jq -c '.exit_code // null')"
@@ -315,7 +316,7 @@ decide_retry() {
     append RETRY_SKIPPED "$(jq -cn --arg n "$name" --argjson id "$id" --argjson c "$count" '{name: $n, id: $id, reason: ("retry budget spent: " + (($c + 1) | tostring) + " same-named jobs already ran in this pipeline (include_retried)")}')"
   else
     local resp new_id
-    if resp="$(glab_ro api -X POST "projects/$ENC/jobs/$id/retry")"; then
+    if resp="$(p_job_retry "$PROJECT" "$id")"; then
       new_id="$(printf '%s' "$resp" | jq -c '.id // null')"
       err "retried $name (#$id) -> new job $new_id"
       append RETRIED "$id"
@@ -374,17 +375,17 @@ post_note() {
 # --- poll loop ----------------------------------------------------------------
 while :; do
   POLLS=$((POLLS + 1))
-  PIPE_JSON="$(api_get "projects/$ENC/pipelines/$PIPE_ID")" || fail "$EX_NOT_FOUND" not_found "pipeline $PIPE_ID not found in $PROJECT"
+  PIPE_JSON="$(p_run_get "$PROJECT" "$PIPE_ID")" || fail "$EX_NOT_FOUND" not_found "pipeline $PIPE_ID not found in $PROJECT"
   if [ "$CONTEXT_READ" = false ]; then
     CONTEXT_READ=true
     # (#31) how long this ref's last green pipeline took: the expected duration of this one.
     ref="$(printf '%s' "$PIPE_JSON" | jq -r '.ref // ""')"
     if [ -n "$ref" ]; then
-      EXPECTED="$(api_get "projects/$ENC/pipelines?ref=$(urlenc "$ref")&status=success&per_page=1" 2>/dev/null | jq -c '.[0].duration // null' 2>/dev/null || echo null)"
+      EXPECTED="$(p_run_last_success "$PROJECT" "$ref" 2>/dev/null | jq -c '.[0].duration // null' 2>/dev/null || echo null)"
     fi
     # (#38) the review policy is part of the verdict: approvals outstanding block a merge too.
     if [ -n "$MR" ]; then
-      APPROVALS="$(api_get "projects/$ENC/merge_requests/$MR/approvals" 2>/dev/null | jq -c '{approved: (.approved // false), approvals_left: (.approvals_left // 0), approvals_required: (.approvals_required // 0)}' 2>/dev/null || echo null)"
+      APPROVALS="$(p_mr_approvals "$PROJECT" "$MR" 2>/dev/null | jq -c '{approved: (.approved // false), approvals_left: (.approvals_left // 0), approvals_required: (.approvals_required // 0)}' 2>/dev/null || echo null)"
     fi
   fi
   STATUS="$(printf '%s' "$PIPE_JSON" | jq -r '.status // "unknown"')"

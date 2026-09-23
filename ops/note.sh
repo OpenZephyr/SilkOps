@@ -15,6 +15,8 @@ set -euo pipefail
 . "$(dirname "$0")/lib/token.sh"
 # shellcheck source=lib/glab.sh
 . "$(dirname "$0")/lib/glab.sh"
+# shellcheck source=lib/provider.sh
+. "$(dirname "$0")/lib/provider.sh"
 
 usage() { fail "$EX_USAGE" usage "usage: note.sh --project <group/project> (--issue <iid> | --mr <iid>) --body-file <f> --marker-unit <U-ID> --plan <basename> --run <id> [--dedupe-key <k>] [--dry-run]${1:+ — $1}"; }
 
@@ -43,9 +45,7 @@ if ! { [ -n "$UNIT" ] && [ -n "$PLAN" ] && [ -n "$RUN" ]; }; then usage "--marke
 if ! { [ -n "$BODY_FILE" ] && [ -f "$BODY_FILE" ]; }; then usage "--body-file must name a readable file"; fi
 require_ci_token   # top level, so the exit-3 JSON and message reach the real streams (the wrappers re-check)
 
-ENC="$(urlenc "$PROJECT")"
-if [ -n "$ISSUE" ]; then NOTEABLE=issue; IID="$ISSUE"; NPATH="projects/$ENC/issues/$IID/notes"
-else NOTEABLE=merge_request; IID="$MR"; NPATH="projects/$ENC/merge_requests/$IID/notes"; fi
+if [ -n "$ISSUE" ]; then NOTEABLE=issue; IID="$ISSUE"; else NOTEABLE=merge_request; IID="$MR"; fi
 # SILKOPS_MARKER=off (KTD3): no marker line; a --dedupe-key becomes a neutral key comment.
 if marker_enabled; then
   MARKER_ON=true; MARKER="$(silkops_marker "$PLAN" "$UNIT" "$RUN")"$'\n'   # $(...) strips the marker's newline
@@ -62,7 +62,7 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/silkops-note.XXXXXX")"; trap 'rm -rf "$TMP"' E
 if [ -n "$KEY" ]; then
   # The listing is what the no-duplicate promise rests on: a failed GET aborts, it is never
   # read as "no notes yet". Without --dedupe-key no listing is made at all.
-  api_get "$NPATH?per_page=100" >"$TMP/notes.json" 2>"$TMP/lookup.err" \
+  p_note_list "$PROJECT" "$NOTEABLE" "$IID" >"$TMP/notes.json" 2>"$TMP/lookup.err" \
     || fail "$EX_OTHER" lookup_failed "could not list the notes of $NOTEABLE $IID for dedupe key '$KEY'; refusing to write without a successful lookup: $(redact <"$TMP/lookup.err" | tr '\n' ' ')" "$IDENT"
   if [ "$MARKER_ON" = true ]; then
     EXISTING="$(jq -c --arg p "$PLAN" --arg u "$UNIT" --arg k "<!-- silkops:key=$KEY -->" \
@@ -80,5 +80,5 @@ if [ "$DRY" = true ]; then
   exit 0
 fi
 printf '%s\n' "$NOTE_JSON" >"$TMP/body.json"
-RESP="$(glab_ro api -X POST "$NPATH" --input "$TMP/body.json")" || fail "$EX_OTHER" note_failed "could not post the note on $NOTEABLE $IID" "$IDENT"
+RESP="$(p_note_post "$PROJECT" "$NOTEABLE" "$IID" "$TMP/body.json")" || fail "$EX_OTHER" note_failed "could not post the note on $NOTEABLE $IID" "$IDENT"
 result "$(jq -cn --argjson i "$IDENT" --argjson r "$RESP" --arg k "$KEY" '$i + {existing: false, id: $r.id} + (if $k != "" then {dedupe_key: $k} else {} end)')"

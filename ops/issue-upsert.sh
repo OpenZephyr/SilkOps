@@ -22,6 +22,8 @@ set -euo pipefail
 . "$(dirname "$0")/lib/token.sh"
 # shellcheck source=lib/glab.sh
 . "$(dirname "$0")/lib/glab.sh"
+# shellcheck source=lib/provider.sh
+. "$(dirname "$0")/lib/provider.sh"
 
 usage() { fail "$EX_USAGE" usage "usage: issue-upsert.sh --project <group/project> --marker-unit <U-ID> --plan <basename> --run <id> --title <t> --body-file <f> [--milestone <title|id>] [--labels a,b] [--assignee <username>] [--due-date YYYY-MM-DD] [--dry-run]${1:+ — $1}"; }
 
@@ -50,7 +52,6 @@ if [ -z "$UNIT" ] || [ -z "$PLAN" ] || [ -z "$RUN" ]; then usage "--marker-unit,
 if ! { [ -n "$BODY_FILE" ] && [ -f "$BODY_FILE" ]; }; then usage "--body-file must name a readable file"; fi
 require_ci_token   # top level, so the exit-3 JSON and message reach the real streams (the wrappers re-check)
 
-ENC="$(urlenc "$PROJECT")"
 MARKER="$(silkops_marker "$PLAN" "$UNIT" "$RUN")"; MARKER="${MARKER%$'\n'}"
 BODY="$(cat "$BODY_FILE")"
 # SILKOPS_MARKER=off (KTD3): identity is the u<N> label alone, so a --milestone re-sync,
@@ -67,9 +68,10 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/silkops-upsert.XXXXXX")"; trap 'rm -rf "$TMP"'
 # lookup <what> <api-path> <out-file> — GET into a file or abort: a failed search must never
 # read as "not found" (that is how duplicates get created). Called at top level, never inside
 # $(...), so the failure JSON and message reach the real streams; stderr is redacted into them.
-lookup() {
-  api_get "$2" >"$3" 2>"$TMP/lookup.err" \
-    || fail "$EX_OTHER" lookup_failed "could not $1; refusing to write without a successful lookup: $(redact <"$TMP/lookup.err" | tr '\n' ' ')"
+lookup() {  # lookup <what> <out-file> <verb> [args…]
+  local what="$1" out="$2"; shift 2
+  "$@" >"$out" 2>"$TMP/lookup.err" \
+    || fail "$EX_OTHER" lookup_failed "could not $what; refusing to write without a successful lookup: $(redact <"$TMP/lookup.err" | tr '\n' ' ')"
 }
 # jq prelude: rq quotes a literal for use inside a regex; marker_line(re) is true when some
 # whole line of .description matches re (a marker merely quoted mid-line does not count).
@@ -80,7 +82,7 @@ JQ_DEFS='def rq: gsub("(?<c>[\\\\.^$*+?()\\[\\]{}|])"; "\\\(.c)");
 # --- assignee → id (#34) ------------------------------------------------------
 ASSIGNEE_IDS=null
 if [ -n "$ASSIGNEE" ]; then
-  lookup "look up user '$ASSIGNEE'" "users?username=$(urlenc "$ASSIGNEE")" "$TMP/users.json"
+  lookup "look up user '$ASSIGNEE'" "$TMP/users.json" p_user_lookup "$ASSIGNEE"
   AID="$(jq -r --arg u "$ASSIGNEE" '[.[] | select(.username == $u)] | first | .id // "null"' "$TMP/users.json")"
   [ "$AID" != null ] || fail "$EX_NOT_FOUND" not_found "no GitLab user named $ASSIGNEE (a dead @mention would be silent; refusing)"
   ASSIGNEE_IDS="[$AID]"
@@ -95,7 +97,7 @@ MILESTONE_ID=null
 if [ -n "$MILESTONE" ]; then
   if [[ "$MILESTONE" =~ ^[0-9]+$ ]]; then MILESTONE_ID="$MILESTONE"
   else
-    lookup "look up milestone '$MILESTONE' in $PROJECT" "projects/$ENC/milestones?title=$(urlenc "$MILESTONE")&include_parent_milestones=true" "$TMP/milestones.json"
+    lookup "look up milestone '$MILESTONE' in $PROJECT" "$TMP/milestones.json" p_milestone_by_title "$PROJECT" "$MILESTONE"
     MILESTONE_ID="$(jq -r --arg t "$MILESTONE" '[.[] | select(.title == $t)] | first | .id // "null"' "$TMP/milestones.json")"
     [ "$MILESTONE_ID" != null ] || fail "$EX_NOT_FOUND" not_found "milestone not found: $MILESTONE"
   fi
@@ -104,8 +106,7 @@ fi
 # --- find: marker first, then label u<N> ------------------------------------
 CANDS='[]'
 if [ "$MARKER_ON" = true ]; then
-SEARCH="$(urlenc "plan=$PLAN unit=$UNIT")"
-lookup "search $PROJECT issues for the marker plan=$PLAN unit=$UNIT" "projects/$ENC/issues?search=$SEARCH&in=description&state=all&scope=all&per_page=100" "$TMP/by-marker.json"
+lookup "search $PROJECT issues for the marker plan=$PLAN unit=$UNIT" "$TMP/by-marker.json" p_issue_search_description "$PROJECT" "plan=$PLAN unit=$UNIT"
 # Whole-line marker matches; open ones first. Two open matches → nobody can say which is the
 # unit's issue → refuse. A closed match alone still surfaces (and is refused below as closed).
 CANDS="$(jq -c --arg p "$PLAN" --arg u "$UNIT" "$JQ_DEFS"'
@@ -123,7 +124,7 @@ ambiguous() {
   || ambiguous "more than one open issue carries the marker plan=$PLAN unit=$UNIT"
 FOUND="$(printf '%s' "$CANDS" | jq -c 'first // null')"
 if [ "$FOUND" = null ]; then
-  lookup "list $PROJECT issues labelled $ULABEL" "projects/$ENC/issues?labels=$(urlenc "$ULABEL")&state=all&scope=all&per_page=100" "$TMP/by-label.json"
+  lookup "list $PROJECT issues labelled $ULABEL" "$TMP/by-label.json" p_issue_list_by_label "$PROJECT" "$ULABEL"
   # The label is unit-only, so another plan's issue for the same unit number carries it too:
   # adopt only issues with no silkops marker at all (human-written) or a marker of THIS plan,
   # on --milestone when one was given.
@@ -160,7 +161,7 @@ if [ "$FOUND" != null ]; then
   fi
   printf '%s' "$PLANNED" | jq -c --arg labels "$LABELS" --argjson ms "$MILESTONE_ID" \
     --argjson extra "$EXTRA" '{description: .description} + (if $labels != "" then {add_labels: $labels} else {} end) + (if $ms != null then {milestone_id: $ms} else {} end) + $extra' >"$TMP/body.json"
-  RESP="$(glab_ro api -X PUT "projects/$ENC/issues/$IID" --input "$TMP/body.json")" || fail "$EX_OTHER" update_failed "could not update issue #$IID" "$IDENT"
+  RESP="$(p_issue_update "$PROJECT" "$IID" "$TMP/body.json")" || fail "$EX_OTHER" update_failed "could not update issue #$IID" "$IDENT"
   result "$(jq -cn --argjson i "$IDENT" --argjson r "$RESP" --argjson f "$FOUND" --argjson rb "$(read_back "$RESP")" '$i + {action: "updated", web_url: ($r.web_url // $i.web_url), prior: {description: ($f.description // "")}} + $rb')"
   exit 0
 fi
@@ -178,5 +179,5 @@ if [ "$DRY" = true ]; then
 fi
 jq -cn --arg t "$TITLE" --arg d "$DESC" --arg l "$ALL_LABELS" --argjson ms "$MILESTONE_ID" --argjson extra "$EXTRA" \
   '{title: $t, description: $d, labels: $l} + (if $ms != null then {milestone_id: $ms} else {} end) + $extra' >"$TMP/body.json"
-RESP="$(glab_ro api -X POST "projects/$ENC/issues" --input "$TMP/body.json")" || fail "$EX_OTHER" create_failed "could not create the issue in $PROJECT"
+RESP="$(p_issue_create "$PROJECT" "$TMP/body.json")" || fail "$EX_OTHER" create_failed "could not create the issue in $PROJECT"
 result "$(printf '%s' "$RESP" | jq -c --arg id "$IDENTITY" --argjson m "$MARKER_ON" --argjson rb "$(read_back "$RESP")" '{action: "created", iid: .iid, web_url: .web_url, state: .state, identity: $id, marker: $m} + $rb')"

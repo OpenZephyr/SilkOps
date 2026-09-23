@@ -22,6 +22,8 @@ set -euo pipefail
 . "$(dirname "$0")/lib/token.sh"
 # shellcheck source=lib/glab.sh
 . "$(dirname "$0")/lib/glab.sh"
+# shellcheck source=lib/provider.sh
+. "$(dirname "$0")/lib/provider.sh"
 
 usage() { fail "$EX_USAGE" usage "usage: registry.sh --project <group/project> (tags <image> | digest <image> <tag> | retag <image> <tag> <new-tag>) [--dry-run]${1:+ — $1}"; }
 
@@ -37,6 +39,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 require_project "$PROJECT"
+p_gitlab_only "registry.sh"
 CMD="${POS[0]:-}"; IMAGE="${POS[1]:-}"
 [ -n "$IMAGE" ] || usage "<image> is required"
 case "$IMAGE" in .|/) REPO="$PROJECT" ;; *) REPO="$PROJECT/${IMAGE#/}" ;; esac

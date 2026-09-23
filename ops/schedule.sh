@@ -30,6 +30,8 @@ set -euo pipefail
 . "$(dirname "$0")/lib/token.sh"
 # shellcheck source=lib/glab.sh
 . "$(dirname "$0")/lib/glab.sh"
+# shellcheck source=lib/provider.sh
+. "$(dirname "$0")/lib/provider.sh"
 
 usage() { fail "$EX_USAGE" usage "usage: schedule.sh --project <group/project> (list | validate --cron <expr> | create --description <d> --cron <expr> --ref <branch> [--timezone <tz>] [--var-file K=<path>]... [--var-env K]... | update --id <schedule id> [--cron <expr>] [--ref <branch>] [--description <d>] [--timezone <tz>] [--active true|false]) [--allow-frequent] [--dry-run]${1:+ — $1}"; }
 
@@ -60,6 +62,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 require_project "$PROJECT"
+p_gitlab_only "schedule.sh"
 [ -n "$CMD" ] || usage "subcommand required: list | validate | create | update"
 # list, create and update read through glab_ro, which needs SILKOPS_CI_TOKEN in CI: check at top level
 # so the exit-3 JSON and message reach the real streams (validate is offline).

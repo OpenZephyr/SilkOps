@@ -17,6 +17,8 @@ set -euo pipefail
 . "$(dirname "$0")/lib/token.sh"
 # shellcheck source=lib/glab.sh
 . "$(dirname "$0")/lib/glab.sh"
+# shellcheck source=lib/provider.sh
+. "$(dirname "$0")/lib/provider.sh"
 
 usage() { fail "$EX_USAGE" usage "usage: after-merge.sh --project <group/project> --mr <iid> [--sibling <iid>]${1:+ — $1}"; }
 PROJECT=""; MR=""; SIB=""
@@ -35,9 +37,8 @@ require_project "$PROJECT"
 [ -z "$SIB" ] || [[ "$SIB" =~ ^[0-9]+$ ]] || usage "--sibling must be an iid"
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || fail "$EX_NOT_FOUND" not_found "not inside a git checkout"
 require_ci_token
-ENC="$(urlenc "$PROJECT")"
 
-MRJ="$(api_get "projects/$ENC/merge_requests/$MR")" || fail "$EX_NOT_FOUND" not_found "merge request !$MR not found in $PROJECT"
+MRJ="$(p_mr_get "$PROJECT" "$MR")" || fail "$EX_NOT_FOUND" not_found "merge request !$MR not found in $PROJECT"
 STATE="$(printf '%s' "$MRJ" | jq -r '.state')"
 [ "$STATE" = merged ] || fail "$EX_REFUSED" not_merged "merge request !$MR is $STATE, not merged; nothing to clean up (this script never merges)"
 SRC="$(printf '%s' "$MRJ" | jq -r '.source_branch')"; DEF="$(printf '%s' "$MRJ" | jq -r '.target_branch')"
@@ -53,14 +54,14 @@ if [ "$SRC" != "$DEF" ] && git show-ref -q --verify "refs/heads/$SRC"; then
 fi
 
 # --- linked issues -------------------------------------------------------------------------
-CLOSES="$(api_get "projects/$ENC/merge_requests/$MR/closes_issues?per_page=100" 2>/dev/null | jq -c '[.[] | {iid, state}]' 2>/dev/null || echo '[]')"
+CLOSES="$(p_mr_closes_issues "$PROJECT" "$MR" 2>/dev/null | jq -c '[.[] | {iid, state}]' 2>/dev/null || echo '[]')"
 OPEN="$(printf '%s' "$CLOSES" | jq -c '[.[] | select(.state != "closed") | .iid]')"
 
 # --- sibling hunks (#41): each substantive added line of the older MR must still be on $DEF ---
 SIBLING=null
 if [ -n "$SIB" ]; then
-  SJ="$(api_get "projects/$ENC/merge_requests/$SIB")" || fail "$EX_NOT_FOUND" not_found "sibling merge request !$SIB not found"
-  SD="$(api_get "projects/$ENC/merge_requests/$SIB/diffs?per_page=100")" || fail "$EX_OTHER" lookup_failed "could not read the diffs of !$SIB"
+  SJ="$(p_mr_get "$PROJECT" "$SIB")" || fail "$EX_NOT_FOUND" not_found "sibling merge request !$SIB not found"
+  SD="$(p_mr_diffs "$PROJECT" "$SIB")" || fail "$EX_OTHER" lookup_failed "could not read the diffs of !$SIB"
   checked=0; missing='[]'
   while IFS= read -r line; do
     [ -n "$line" ] || continue
@@ -71,7 +72,7 @@ if [ -n "$SIB" ]; then
 fi
 
 # --- the default-branch pipeline for the merge commit ------------------------------------------
-PIPE="$(api_get "projects/$ENC/pipelines?ref=$(urlenc "$DEF")&sha=$MSHA&per_page=1" 2>/dev/null | jq -c '.[0] | {id, status, web_url}' 2>/dev/null || echo null)"
+PIPE="$(p_run_for_ref_sha "$PROJECT" "$DEF" "$MSHA" 2>/dev/null | jq -c '.[0] | {id, status, web_url}' 2>/dev/null || echo null)"
 [ "$PIPE" != null ] && [ "$PIPE" != '{"id":null,"status":null,"web_url":null}' ] || PIPE=null
 HINT=null; [ "$PIPE" = null ] || HINT="watch.sh --project $PROJECT --pipeline $(printf '%s' "$PIPE" | jq -r '.id')"
 result "$(jq -cn --argjson iid "$MR" --arg d "$DEF" --arg s "$SRC" --arg sha "$MSHA" --argjson del "$(jq -cn --arg x "$DELETED" 'if $x == "null" then null else $x end')" \

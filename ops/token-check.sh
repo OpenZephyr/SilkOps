@@ -28,6 +28,8 @@ set -euo pipefail
 . "$(dirname "$0")/lib/token.sh"
 # shellcheck source=lib/glab.sh
 . "$(dirname "$0")/lib/glab.sh"
+# shellcheck source=lib/provider.sh
+. "$(dirname "$0")/lib/provider.sh"
 
 usage() { fail "$EX_USAGE" usage "usage: token-check.sh --project <group/project> [--for settings|ci|session] [--expect-role <Role>]${1:+ — $1}"; }
 
@@ -51,13 +53,7 @@ case "$FOR" in settings|ci|session) ;; *) usage "--for must be settings, ci or s
 
 # api <path> — GET under the identity being checked. Token presence is checked
 # by the wrapper (exit 3) before glab is ever spawned.
-api() {
-  case "$FOR" in
-    settings) glab_settings api -X GET "$1" ;;
-    ci)       with_ci_token glab api -X GET "$1" ;;
-    session)  api_get "$1" ;;
-  esac
-}
+api() { p_raw "$FOR" "$1"; }   # the provider's identity probe under the chosen token
 # api_opt <path> — like api, but an HTTP error (404/403) yields "null" and
 # exit 0. stderr is dropped: the wrapper already redacts it, and a missing
 # optional endpoint is not worth a warning line.

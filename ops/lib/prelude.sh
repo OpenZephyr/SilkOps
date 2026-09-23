@@ -134,8 +134,10 @@ facts_paths() {
 }
 
 # --- provider seam -----------------------------------------------------------
-# GitLab.com is the default host and gitlab the only provider. Anything else is
-# a reservation for later, not a promise: fail usage rather than guess.
-SILKOPS_PROVIDER="${SILKOPS_PROVIDER:-gitlab}"
-[ "$SILKOPS_PROVIDER" = gitlab ] || fail "$EX_USAGE" usage "provider not implemented: $SILKOPS_PROVIDER (only gitlab)"
+# The provider is SILKOPS_PROVIDER, else read off the origin remote (github.com → github,
+# anything else → gitlab). ops/lib/provider.sh loads the verb set for it (v0.3 U2).
+if [ -z "${SILKOPS_PROVIDER:-}" ]; then
+  case "$(git remote get-url origin 2>/dev/null || true)" in *github.com*) SILKOPS_PROVIDER=github ;; *) SILKOPS_PROVIDER=gitlab ;; esac
+fi
+export SILKOPS_PROVIDER
 export GITLAB_HOST="${GITLAB_HOST:-gitlab.com}"
