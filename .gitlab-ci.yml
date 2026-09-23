@@ -17,7 +17,7 @@ tier1:
     - apt-get update -qq && apt-get install -y -qq --no-install-recommends bash jq curl python3 shellcheck git ca-certificates >/dev/null
   script:
     - bash tests/run.sh
-    - shellcheck -x -P ops ops/*.sh ops/lib/*.sh
+    - shellcheck -x -P ops ops/*.sh ops/lib/*.sh ops/lib/providers/*.sh bin/silkops
     - python3 ops/render-runbook.py   # rendered here, never committed (KTD5)
     # Verification gate: no merge verb, no protected-branch write, anywhere in skills/ or ops/.
     # token-check.sh's read of protected_branches is the one sanctioned hit.

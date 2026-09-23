@@ -55,6 +55,13 @@ if [ "$DRY" = true ]; then
   exit 0
 fi
 
+if ! p_has_issue_links; then
+  # No blocking links on this host (GitHub REST): the dependency is recorded as a line in the
+  # target issue's managed region by the caller; say so instead of pretending (v0.3 KTD4).
+  err "this provider has no issue links; recording the dependency as a managed-region line"
+  result "$(jq -cn --argjson b "$BASE" '$b + {existing: false, link_type: null, fallback: "managed_region", depends_on_line: "Blocked by #\($b.source_iid)"}')"
+  exit 0
+fi
 ERRF="$(mktemp "${TMPDIR:-/tmp}/silkops-link.XXXXXX")"; trap 'rm -f "$ERRF"' EXIT
 post() { p_issue_link_post "$PROJECT" "$SOURCE" "$PID" "$TARGET" "$1" 2>"$ERRF"; }
 

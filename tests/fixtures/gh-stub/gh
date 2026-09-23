@@ -1,15 +1,47 @@
 #!/usr/bin/env bash
-# Fake `gh` for offline tests: logs argv to $GH_STUB_LOG and serves $GH_STUB_DIR/<name>.json,
-# where <name> is the first `api` path segment after repos/<owner>/<repo>/ (issues, pulls) or the
-# subcommand (release). Never touches the network.
+# Fake `gh` for offline tests. Logs argv to $GH_STUB_LOG (never a token) and serves canned JSON.
+# Routing: $GH_STUB_SCENARIO/routes.tsv lines `METHOD<TAB>path-glob<TAB>file[<TAB>status[<TAB>argv-glob]]`
+# (first match wins; `*` method matches any; a non-2xx status prints the file and exits 1;
+# `-` file = empty body). A request body from `--input <file>` is copied to $GH_STUB_BODY_DIR/<n>.json.
+# Without a scenario, the legacy map serves $GH_STUB_DIR/<first path segment after repos/x/y/>.json.
 set -uo pipefail
-[ -z "${GH_STUB_LOG:-}" ] || printf 'argv:%s\n' "$(printf ' %s' "$@")" >>"$GH_STUB_LOG"
-case "${1:-}" in
-  api)
-    path=""; for a in "$@"; do case "$a" in repos/*) path="$a" ;; esac; done
-    name="$(printf '%s' "$path" | sed -E 's|^repos/[^/]+/[^/]+/([a-z]+).*|\1|')"
-    f="${GH_STUB_DIR:-}/$name.json"; [ -f "$f" ] || { echo "gh-stub: no fixture for $path" >&2; exit 1; }
-    cat "$f" ;;
-  release) echo '{"url":"https://github.com/example/silkops-harness/releases/tag/silkops-harness--v0.2.0"}' ;;
-  *) echo "gh-stub: unsupported: $*" >&2; exit 1 ;;
-esac
+args=("$@")
+[ -z "${GH_STUB_LOG:-}" ] || printf 'argv:%s%s\n' "$(printf ' %s' "$@")" "${GH_TOKEN:+ token=set}" >>"$GH_STUB_LOG"
+method=GET; path=""; input=""
+if [ "${1:-}" = api ]; then
+  shift
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -X|--method) method="${2:-GET}"; shift 2 ;;
+      --input) input="${2:-}"; shift 2 ;;
+      -f|--raw-field|-F|--field|-H|--header) shift 2 ;;
+      --paginate|--silent|-q) shift ;;
+      -*) shift ;;
+      *) path="$1"; shift ;;
+    esac
+  done
+fi
+if [ -n "$input" ] && [ -n "${GH_STUB_BODY_DIR:-}" ]; then
+  mkdir -p "$GH_STUB_BODY_DIR"; n=$(find "$GH_STUB_BODY_DIR" -name '*.json' | wc -l | tr -d ' ')
+  { printf '{"method":"%s","path":"%s","body":' "$method" "$path"; cat "$input"; printf '}\n'; } >"$GH_STUB_BODY_DIR/$((n + 1)).json"
+fi
+scenario="${GH_STUB_SCENARIO:-}"
+if [ "${args[0]:-}" = release ]; then echo '{"url":"https://github.com/example/silkops-harness/releases/tag/silkops-harness--v0.2.0"}'; exit 0; fi
+if [ -n "$scenario" ] && [ -f "$scenario/routes.tsv" ]; then
+  argv_joined="$(printf ' %s' "${args[@]}")"
+  while IFS=$'\t' read -r r_method r_glob r_file r_status r_argv; do
+    [ -n "$r_method" ] || continue; case "$r_method" in '#'*) continue ;; esac
+    [ "$r_method" = '*' ] || [ "$r_method" = "$method" ] || continue
+    # shellcheck disable=SC2254
+    case "$path" in $r_glob) ;; *) continue ;; esac
+    # shellcheck disable=SC2254  # the glob comes from the fixture on purpose
+    if [ -n "$r_argv" ]; then case "$argv_joined" in $r_argv) ;; *) continue ;; esac; fi
+    r_status="${r_status:-200}"; body=""
+    if [ "$r_file" != "-" ]; then [ -f "$scenario/$r_file" ] || { echo "gh-stub: route file missing: $scenario/$r_file" >&2; exit 1; }; body="$(cat "$scenario/$r_file")"; fi
+    case "$r_status" in 2*) [ -n "$body" ] && printf '%s\n' "$body"; exit 0 ;; *) [ -n "$body" ] && printf '%s\n' "$body"; echo "gh: HTTP $r_status ($method $path)" >&2; exit 1 ;; esac
+  done <"$scenario/routes.tsv"
+  echo "gh: HTTP 404 Not Found ($method $path)" >&2; exit 1
+fi
+name="$(printf '%s' "$path" | sed -E 's|^repos/[^/]+/[^/]+/([a-z]+).*|\1|')"
+f="${GH_STUB_DIR:-}/$name.json"; [ -f "$f" ] || { echo "gh-stub: no fixture for $path" >&2; exit 1; }
+cat "$f"

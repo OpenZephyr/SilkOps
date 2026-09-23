@@ -1,0 +1,7 @@
+GET	repos/*/pulls/7	../common/pull-7.json
+GET	repos/*/actions/runs?head_sha=*	../common/runs-green.json
+GET	repos/*/actions/runs/501/jobs*	../common/jobs-green.json
+GET	repos/*/actions/runs/501	../common/run-501-green.json
+GET	repos/*/actions/runs?branch=*	../common/runs-green.json
+*	graphql	../common/review-none.json	200	*reviewDecision*
+GET	repos/*/issues/7/comments*	../common/empty.json

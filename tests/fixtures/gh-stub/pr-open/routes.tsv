@@ -1,0 +1,5 @@
+GET	repos/*/pulls?head=*	pulls-open.json
+GET	repos/*/pulls?state=open&base=*	../common/empty.json
+GET	repos/*/pulls/7/files*	../common/files-7.json
+GET	repos/*/pulls/7	../common/pull-7.json
+PATCH	repos/*/pulls/7	../common/pull-7-updated.json

@@ -217,7 +217,7 @@ if [ "$(rc_of t16)" = 0 ] \
 else fail "T16" "rc=$(rc_of t16) out=$(out_of t16) out_b=$(out_of t16b) err=$(err_of t16)"; fi
 
 if command -v shellcheck >/dev/null 2>&1; then
-  if shellcheck -x --source-path=SCRIPTDIR "$ROOT"/ops/*.sh "$ROOT"/ops/lib/*.sh >"$SCRATCH/shellcheck.log" 2>&1; then
+  if shellcheck -x -P "$ROOT/ops" "$ROOT"/ops/*.sh "$ROOT"/ops/lib/*.sh "$ROOT"/ops/lib/providers/*.sh "$ROOT"/bin/silkops >"$SCRATCH/shellcheck.log" 2>&1; then
     pass "T15 shellcheck clean on ops/*.sh and ops/lib/*.sh"
   else
     fail "T15" "$(head -20 "$SCRATCH/shellcheck.log")"

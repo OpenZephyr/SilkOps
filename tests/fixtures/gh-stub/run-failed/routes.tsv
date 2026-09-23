@@ -1,0 +1,10 @@
+GET	repos/*/pulls/7	../common/pull-7.json
+GET	repos/*/actions/runs?head_sha=*	../common/runs-failed.json
+GET	repos/*/actions/runs/502/jobs*	../common/jobs-failed.json
+GET	repos/*/actions/runs/502	../common/run-502-failed.json
+GET	repos/*/actions/runs?branch=*	../common/runs-green.json
+GET	repos/*/actions/jobs/9101/logs	../common/log-9101.txt
+POST	repos/*/actions/jobs/9101/rerun	-	201
+*	graphql	../common/review-none.json	200	*reviewDecision*
+GET	repos/*/issues/7/comments*	../common/empty.json
+POST	repos/*/issues/7/comments	../common/comment-created.json	201

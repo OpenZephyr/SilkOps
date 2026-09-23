@@ -1,0 +1,3 @@
+2026-09-23T10:05:00.0000000Z ##[group]Run docker pull aquasec/trivy
+2026-09-23T10:05:01.0000000Z Error response from daemon: Head "https://registry-1.docker.io/v2/aquasec/trivy/manifests/latest": received unexpected HTTP status: 502 Bad Gateway
+2026-09-23T10:05:01.0000000Z ##[error]Process completed with exit code 1.
