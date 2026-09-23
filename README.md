@@ -38,10 +38,11 @@ own signatures travel with that project.
 
 ## Diagrams
 
-Drawn in Excalidraw and saved as `.excalidraw.svg` (scene embedded, editable) under
-`docs/diagrams/`: `architecture` (skills over ops over glab), `fact-layers`, `ship-watch-loop`.
-Edit with the Excalidraw PWA offline, `docker run -p 5000:80 excalidraw/excalidraw`, or the VS
-Code Excalidraw extension; export as SVG with "Embed scene" and save over the file.
+Excalidraw scenes under `docs/diagrams/`: `architecture` (skills over ops over glab),
+`fact-layers`, `ship-watch-loop`. The `.excalidraw` file is the source; the `.excalidraw.svg`
+beside it is the export with the scene embedded, so either is editable. Open with the Excalidraw
+PWA offline, `docker run -p 5000:80 excalidraw/excalidraw`, or the VS Code Excalidraw extension;
+export as SVG with "Embed scene" and save over the file.
 
 ## Develop
 

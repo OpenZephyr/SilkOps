@@ -11,7 +11,7 @@ This file is read by every agent; `CLAUDE.md` only imports it.
 - Verdict first, then the evidence. One JSON result per script, one line per step in a skill.
 - Issue bodies: a link and at most one paragraph. Triage notes: the job, the first failing line, the fact matched.
 - No generated files in consumer repos beyond `.silkops/facts.json` and the conventions block.
-- Diagrams are Excalidraw scenes saved as `.excalidraw.svg`, drawn by a human. Before creating one, ask which editing path the operator wants; never write the scene JSON.
+- Diagrams are Excalidraw scenes: the `.excalidraw` source and its `.excalidraw.svg` export (scene embedded) under `docs/diagrams/`. An agent may draft the scene JSON; the SVG export is made in Excalidraw with "Embed scene" on.
 
 ## Scripts (`ops/`)
 
