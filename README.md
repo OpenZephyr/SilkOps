@@ -38,6 +38,12 @@ own signatures travel with that project.
 
 ## Diagrams
 
+![skills over ops over glab](docs/diagrams/architecture.excalidraw.svg)
+
+![three fact layers](docs/diagrams/fact-layers.excalidraw.svg)
+
+![one loop, ending at a human](docs/diagrams/ship-watch-loop.excalidraw.svg)
+
 Excalidraw scenes under `docs/diagrams/`: `architecture` (skills over ops over glab),
 `fact-layers`, `ship-watch-loop`. The `.excalidraw` file is the source; the `.excalidraw.svg`
 beside it is the export with the scene embedded, so either is editable. Open with the Excalidraw
