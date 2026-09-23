@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# silkops — the one entry command (v0.3 U1). `silkops <verb> [args…]` runs the matching ops/
+# script from any cwd, any agent, or CI; arguments pass through untouched. `silkops doctor`
+# reports what this machine has. Never merges, never pushes a protected branch.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$(readlink "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")/.." && pwd)"
+export SILKOPS_ROOT="$ROOT"
+
+verb_script() {
+  case "$1" in
+    watch) echo ops/watch.sh ;;                mr-upsert) echo ops/mr-upsert.sh ;;
+    issue-upsert) echo ops/issue-upsert.sh ;;  issue-link) echo ops/issue-link.sh ;;
+    milestone-upsert) echo ops/milestone-upsert.sh ;; milestone-sync) echo ops/milestone-sync.sh ;;
+    note) echo ops/note.sh ;;                  commit) echo ops/commit.sh ;;
+    after-merge) echo ops/after-merge.sh ;;    token-check) echo ops/token-check.sh ;;
+    registry) echo ops/registry.sh ;;          schedule) echo ops/schedule.sh ;;
+    variable) echo ops/variable.sh ;;          allowlist) echo ops/allowlist.sh ;;
+    inbox) echo ops/inbox.sh ;;                conventions) echo ops/conventions.sh ;;
+    classify) echo ops/classify-failure.py ;;  trace) echo ops/trace.py ;;
+    plan-units) echo ops/plan-units.py ;;      render-runbook) echo ops/render-runbook.py ;;
+    *) return 1 ;;
+  esac
+}
+VERBS="watch mr-upsert issue-upsert issue-link milestone-upsert milestone-sync note commit after-merge token-check registry schedule variable allowlist inbox conventions classify trace plan-units render-runbook redact doctor"
+
+usage() {
+  echo "usage: silkops <verb> [args…]   verbs: $VERBS" >&2
+  printf '{"ok":false,"error":"usage","message":"%s"}\n' "${1:-unknown verb}"
+  exit 2
+}
+[ $# -ge 1 ] || usage "a verb is required"
+verb="$1"; shift
+case "$verb" in
+  -h|--help|help)
+    echo "silkops <verb> [args…] — each verb is one ops/ script; add --help to see its usage"
+    for v in $VERBS; do echo "  $v"; done
+    exit 0 ;;
+  redact)
+    # shellcheck source=../ops/lib/prelude.sh
+    . "$ROOT/ops/lib/prelude.sh"; redact; exit 0 ;;
+  doctor)
+    # shellcheck source=../ops/lib/prelude.sh
+    . "$ROOT/ops/lib/prelude.sh"
+    tool() { command -v "$1" 2>/dev/null || echo null; }
+    tv() { local p; p="$(tool "$1")"; if [ "$p" = null ]; then echo null; else printf '"%s"' "$p"; fi; }
+    remote="$(git remote get-url origin 2>/dev/null || true)"
+    provider=unknown
+    case "$remote" in
+      *github.com*) provider=github ;;
+      *gitlab.com*) provider=gitlab ;;
+      *) if [ -n "${SILKOPS_PROVIDER:-}" ]; then provider="$SILKOPS_PROVIDER"; elif [ -n "${GITEA_TOKEN:-}" ] && [ -n "$remote" ]; then provider=gitea; elif [ -n "$remote" ]; then provider=gitlab; fi ;;
+    esac
+    [ -z "${SILKOPS_PROVIDER:-}" ] || provider="$SILKOPS_PROVIDER"
+    fp="$(facts_paths | jq -Rc . | jq -sc .)"
+    result "$(jq -cn --arg root "$ROOT" --arg v "$(jq -r .version "$ROOT/.claude-plugin/plugin.json")" \
+      --argjson glab "$(tv glab)" --argjson gh "$(tv gh)" --argjson tea "$(tv tea)" --argjson jq "$(tv jq)" --argjson curl "$(tv curl)" \
+      --argjson py "$(tv python3)" --argjson git "$(tv git)" --argjson sc "$(tv shellcheck)" \
+      --argjson ci "$([ -n "${SILKOPS_CI_TOKEN:-}" ] && echo true || echo false)" \
+      --argjson st "$([ -n "${SILKOPS_SETTINGS_TOKEN:-}" ] && echo true || echo false)" \
+      --argjson ghk "$([ -n "${GH_TOKEN:-}" ] && echo true || echo false)" \
+      --argjson gt "$([ -n "${GITEA_TOKEN:-}" ] && echo true || echo false)" \
+      --arg provider "$provider" --arg remote "$remote" --argjson fp "$fp" \
+      '{root: $root, version: $v,
+        tools: {glab: $glab, gh: $gh, tea: $tea, jq: $jq, curl: $curl, python3: $py, git: $git, shellcheck: $sc},
+        tokens: {ci: $ci, settings: $st, github: $ghk, gitea: $gt},
+        provider: $provider, remote: (if $remote == "" then null else $remote end), facts_paths: $fp}')"
+    exit 0 ;;
+esac
+script="$(verb_script "$verb")" || usage "unknown verb: $verb"
+case "$script" in
+  *.py) exec python3 "$ROOT/$script" "$@" ;;
+  *) exec bash "$ROOT/$script" "$@" ;;
+esac

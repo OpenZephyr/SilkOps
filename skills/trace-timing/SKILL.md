@@ -7,7 +7,7 @@ argument-hint: "<job-id | job-url> [--project <group/project>] [--top <n>]"
 # trace-timing
 
 Result: two headline numbers (total wall-clock, largest step) and one ranked table, from
-`python3 ${CLAUDE_PLUGIN_ROOT}/ops/trace.py timing <trace-file> --top <n>` → `total_s`,
+`silkops trace timing <trace-file> --top <n>` → `total_s`,
 `largest_section`, `largest_step`, `sections[]`, `steps[]`, `has_timestamps`. Read-only.
 
 ## Steps
@@ -32,5 +32,5 @@ sections table only, say so, invent nothing. Section epochs are still exact.
 
 ## Guardrails
 
-- Quoted trace lines pass `redact` first (`. ${CLAUDE_PLUGIN_ROOT}/ops/lib/prelude.sh; redact < file`).
+- Quoted trace lines pass `redact` first (`silkops redact < file`).
 - No retry, no cancel, nothing written; `--project` explicit on every call.

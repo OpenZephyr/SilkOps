@@ -7,24 +7,24 @@ argument-hint: "<consumer group/project> <image:tag> [--factory <group/project>]
 # consumer-onboarding
 
 Result: the allow-list entry, the pin MR (URL and pipeline state), schedules created (owner, next
-run) and variable keys, each from its `${CLAUDE_PLUGIN_ROOT}/ops/` script's JSON. One confirmation
+run) and variable keys, each from its `ops/` script's JSON. One confirmation
 per settings write, shown as current vs proposed. Read `references/preflight.md` first.
 
 ## Steps
 
-1. Pre-flight, read-only: `ops/token-check.sh --project <factory> --for settings` and the same for
-   the consumer; `ops/schedule.sh --project <consumer> list`; `ops/registry.sh --project <factory>
-   digest <image> <tag>`; `ops/conventions.sh --dir <scratch copy>` (`unchanged` = block present).
+1. Pre-flight, read-only: `silkops token-check --project <factory> --for settings` and the same for
+   the consumer; `silkops schedule --project <consumer> list`; `silkops registry --project <factory>
+   digest <image> <tag>`; `silkops conventions --dir <scratch copy>` (`unchanged` = block present).
    Exit 4 stops with the role needed.
-2. Factory: `ops/allowlist.sh --project <factory> add --consumer <consumer> [--group] --dry-run`,
+2. Factory: `silkops allowlist --project <factory> add --consumer <consumer> [--group] --dry-run`,
    confirm, then apply. `--group` only on an explicit yes (KD2). `existing: true` = nothing to do.
 3. Consumer, one MR: on a new branch set the image to `registry.gitlab.com/<factory>/<image>:<tag>`
-   (the `FACTORY_IMAGE_ROOT` pattern), run `ops/conventions.sh --dir <checkout>`, commit with the
+   (the `FACTORY_IMAGE_ROOT` pattern), run `silkops conventions --dir <checkout>`, commit with the
    `commit` skill, then `ship-mr` and `watch-pipeline`. A pull success is the verification;
    `pull access denied` within seconds means step 2 did not land (fact `pull-access-denied`).
-4. Schedules and variables, each dry-run → show → confirm → apply: `ops/schedule.sh --project
+4. Schedules and variables, each dry-run → show → confirm → apply: `silkops schedule --project
    <consumer> create --description … --cron "0 22 * * *" --ref main --timezone <tz>` (sub-daily
-   crons refused unless the operator asks for `--allow-frequent`); `ops/variable.sh --project
+   crons refused unless the operator asks for `--allow-frequent`); `silkops variable --project
    <consumer> set --key K --value-file <path> --masked --protected` (value by file, never pasted).
 5. Report the four items above.
 

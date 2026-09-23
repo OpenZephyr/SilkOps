@@ -13,9 +13,9 @@ for f in "$ROOT"/skills/*/SKILL.md; do
   size="$(wc -c <"$f" | tr -d ' ')"
   # first paragraph after the frontmatter and the H1
   first="$(awk 'BEGIN{fm=0} /^---$/{fm++; next} fm<2{next} /^# /{next} /^[[:space:]]*$/{if (p) exit; next} {p=p $0 " "} END{print p}' "$f")"
-  if [ "$size" -le "$LIMIT" ] && printf '%s' "$first" | grep -q 'Result'; then
-    pass "S-$name ${size}B, opens with its result shape"
-  else fail "S-$name" "size=${size}B (limit $LIMIT); first paragraph: ${first:0:90}"; fi
+  if [ "$size" -le "$LIMIT" ] && printf '%s' "$first" | grep -q 'Result' && ! grep -q 'CLAUDE_PLUGIN_ROOT' "$f"; then
+    pass "S-$name ${size}B, opens with its result shape, no agent-specific path"
+  else fail "S-$name" "size=${size}B (limit $LIMIT); plugin var: $(grep -c CLAUDE_PLUGIN_ROOT "$f"); first paragraph: ${first:0:90}"; fi
 done
 echo "test-skill-size: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

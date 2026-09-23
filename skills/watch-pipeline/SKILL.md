@@ -6,14 +6,14 @@ argument-hint: "<mr-iid | pipeline-id> [--project <group/project>] [--wait <seco
 
 # watch-pipeline
 
-Result: one JSON line from `${CLAUDE_PLUGIN_ROOT}/ops/watch.sh` with `status`, `terminal`, `ready`,
+Result: one JSON line from `silkops watch` with `status`, `terminal`, `ready`,
 `not_ready_reason`, `still_running`, `resume_after_s`, `failed[]` (classification, root_cause,
 web_url, first_failure), `retried`, `resume_hint`. Never merges: "ready" is the end state.
 
 ## Steps
 
 1. `--project` explicit (remote or URL). Target: `--mr <iid>` or `--pipeline <id>`; a URL gives both.
-   `ops/watch.sh --project P --mr <iid> --wait 300 --interval 20 --note --plan <basename> --run <id>`.
+   `silkops watch --project P --mr <iid> --wait 300 --interval 20 --note --plan <basename> --run <id>`.
    No `--retry` on the first call.
 2. Act on the verdict, one line each:
    - `still_running`: normal for a long pipeline. Say `waited_s` of `expected_duration_s`, then run

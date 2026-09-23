@@ -6,14 +6,14 @@ argument-hint: "<mr-iid> [--project <group/project>] [--sibling <mr-iid>]"
 
 # after-merge
 
-Result: one JSON line from `${CLAUDE_PLUGIN_ROOT}/ops/after-merge.sh` with `merged`,
+Result: one JSON line from `silkops after-merge` with `merged`,
 `branch_deleted`, `closes_issues[] {iid, state}`, `issues_still_open[]`, `sibling {checked,
 missing[]}`, `default_branch_pipeline` and a `resume_hint` for `watch-pipeline`. Never merges;
 exit 7 when the MR is not merged yet.
 
 ## Steps
 
-1. `--project` explicit. `ops/after-merge.sh --project P --mr <iid> [--sibling <older iid>]`
+1. `--project` explicit. `silkops after-merge --project P --mr <iid> [--sibling <older iid>]`
    from the checkout: fetch, default branch fast-forwarded, merged local branch deleted, refs
    pruned. A non-fast-forward default branch is refused and left untouched.
 2. `issues_still_open` non-empty: the MR named them but GitLab did not close them (no `Closes`
