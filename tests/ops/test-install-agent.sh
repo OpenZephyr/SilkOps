@@ -53,5 +53,16 @@ else fail "A5" "rc=$(rc_of a5) out=$(out_of a5) gem=$(cat "$SCRATCH/repo/GEMINI.
 run a6 vim
 if [ "$(rc_of a6)" = 2 ]; then pass "A6 unknown agent exits 2"; else fail "A6" "rc=$(rc_of a6)"; fi
 
+# A7: installed as a Claude Code plugin (root under plugins/cache/<mkt>/<plugin>/<version>), the bin
+# link must be a shim that resolves the newest version at run time, not a link into one version dir.
+C="$SCRATCH/cachehome"; V1="$C/.claude/plugins/cache/silkops/silkops/0.3.0"; V2="$C/.claude/plugins/cache/silkops/silkops/0.3.1"
+mkdir -p "$V1" "$V2"; for v in "$V1" "$V2"; do cp -R "$ROOT/bin" "$ROOT/ops" "$ROOT/skills" "$ROOT/.claude-plugin" "$ROOT/facts" "$v/"; done
+printf '{"version":"0.3.1"}\n' >"$V2/.claude-plugin/plugin.json"
+mkdir -p "$SCRATCH/a7"; HOME="$C" bash "$V1/bin/silkops" install-agent claude-code >"$SCRATCH/a7/out" 2>"$SCRATCH/a7/err"; echo $? >"$SCRATCH/a7/rc"
+if [ "$(rc_of a7)" = 0 ] && out_of a7 | jq -e '.bin_kind == "shim"' >/dev/null && [ -f "$C/.local/bin/silkops" ] && [ ! -L "$C/.local/bin/silkops" ] && [ -x "$C/.local/bin/silkops" ] \
+  && [ "$(HOME="$C" "$C/.local/bin/silkops" doctor | jq -r .version)" = "0.3.1" ]; then
+  pass "A7 plugin-cache install writes a PATH shim that runs the newest installed version (0.3.1 over 0.3.0)"
+else fail "A7" "rc=$(rc_of a7) out=$(out_of a7) err=$(cat "$SCRATCH/a7/err") shim=$(cat "$C/.local/bin/silkops" 2>&1 | head -3)"; fi
+
 echo "test-install-agent: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]
