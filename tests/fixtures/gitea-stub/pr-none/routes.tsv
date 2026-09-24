@@ -1,0 +1,6 @@
+GET	repos/example/silkops-harness	../common/repo.json
+GET	user	../common/user.json
+GET	repos/*/pulls?state=open*	../common/empty.json
+POST	repos/*/pulls	../common/pull-created.json	201
+GET	repos/*/pulls/8/files*	../common/empty.json
+GET	repos/*/pulls/8	../common/pull-created.json

@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Fake `curl` for the Gitea provider tests. Routes by the URL path after /api/v1/ using
+# $GITEA_STUB_SCENARIO/routes.tsv (`METHOD<TAB>path-glob<TAB>file[<TAB>status]`). The token must
+# arrive as a curl config on stdin (-K -); anything token-shaped on argv is refused (exit 99).
+# A JSON body from --data-binary @file is copied to $GITEA_STUB_BODY_DIR/<n>.json. Logs argv to $GITEA_STUB_LOG.
+set -uo pipefail
+for a in "$@"; do case "$a" in *Authorization*|*token\ *|-u|--user) echo "gitea-stub: REFUSED token-shaped argv" >&2; exit 99 ;; esac; done
+method=GET; url=""; data=""; out=""; want_code=""; auth=none
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -K) [ "$2" = "-" ] && { while IFS= read -r l; do case "$l" in header*Authorization:*) auth=token ;; esac; done; }; shift 2 ;;
+    -X) method="$2"; shift 2 ;;
+    -H) shift 2 ;;
+    -o) out="$2"; shift 2 ;;
+    -w) want_code="$2"; shift 2 ;;
+    --data-binary) data="${2#@}"; shift 2 ;;
+    -s|-S|-sS|-f|-L|-D) [ "$1" = -D ] && shift; shift ;;
+    -*) echo "gitea-stub: unsupported flag $1" >&2; exit 98 ;;
+    *) url="$1"; shift ;;
+  esac
+done
+path="${url#*/api/v1/}"
+[ -z "${GITEA_STUB_LOG:-}" ] || printf 'curl: %s %s auth=%s\n' "$method" "$path" "$auth" >>"$GITEA_STUB_LOG"
+if [ -n "$data" ] && [ -n "${GITEA_STUB_BODY_DIR:-}" ]; then
+  mkdir -p "$GITEA_STUB_BODY_DIR"; n=$(find "$GITEA_STUB_BODY_DIR" -name '*.json' | wc -l | tr -d ' ')
+  { printf '{"method":"%s","path":"%s","body":' "$method" "$path"; cat "$data"; printf '}\n'; } >"$GITEA_STUB_BODY_DIR/$((n + 1)).json"
+fi
+respond() { local code="$1" body="$2"; if [ -n "$body" ]; then if [ -n "$out" ]; then cat "$body" >"$out"; else cat "$body"; fi; fi; [ -n "$want_code" ] && printf '%s' "$code"; exit 0; }
+s="${GITEA_STUB_SCENARIO:?}"
+while IFS=$'\t' read -r m g f c; do
+  [ -n "$m" ] || continue; case "$m" in '#'*) continue ;; esac
+  [ "$m" = '*' ] || [ "$m" = "$method" ] || continue
+  # shellcheck disable=SC2254
+  case "$path" in $g) ;; *) continue ;; esac
+  [ "$f" = "-" ] && respond "${c:-200}" ""
+  respond "${c:-200}" "$s/$f"
+done <"$s/routes.tsv"
+[ -n "$want_code" ] && printf '404'; echo "gitea-stub: unrouted $method $path" >&2; exit 0

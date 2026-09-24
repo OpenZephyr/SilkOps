@@ -80,7 +80,7 @@ managed_region_plan() {
 # programming error: nothing reaches stdout and the script exits 1.
 result() {
   local out
-  if ! out="$(printf '%s' "${1:-}" | jq -ce --arg p "${SILKOPS_PROVIDER:-gitlab}" 'if type == "object" then {ok: true, provider: $p} + . else error("result is not a JSON object") end' 2>/dev/null)"; then
+  if ! out="$(printf '%s' "${1:-}" | jq -ce --arg p "${SILKOPS_PROVIDER:-gitlab}" --argjson x "${SILKOPS_EXPERIMENTAL:-false}" 'if type == "object" then {ok: true, provider: $p} + (if $x then {experimental: true} else {} end) + . else error("result is not a JSON object") end' 2>/dev/null)"; then
     err "internal: result() was given invalid JSON"
     exit "$EX_OTHER"
   fi
@@ -137,7 +137,11 @@ facts_paths() {
 # The provider is SILKOPS_PROVIDER, else read off the origin remote (github.com → github,
 # anything else → gitlab). ops/lib/provider.sh loads the verb set for it (v0.3 U2).
 if [ -z "${SILKOPS_PROVIDER:-}" ]; then
-  case "$(git remote get-url origin 2>/dev/null || true)" in *github.com*) SILKOPS_PROVIDER=github ;; *) SILKOPS_PROVIDER=gitlab ;; esac
+  case "$(git remote get-url origin 2>/dev/null || true)" in
+    *github.com*) SILKOPS_PROVIDER=github ;;
+    *gitlab*) SILKOPS_PROVIDER=gitlab ;;
+    *) if [ -n "${GITEA_TOKEN:-}" ]; then SILKOPS_PROVIDER=gitea; else SILKOPS_PROVIDER=gitlab; fi ;;
+  esac
 fi
 export SILKOPS_PROVIDER
 export GITLAB_HOST="${GITLAB_HOST:-gitlab.com}"
