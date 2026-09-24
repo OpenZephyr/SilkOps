@@ -64,7 +64,7 @@ case "$verb" in
       [ "$DRY" = true ] || { mkdir -p "$(dirname "$2")"; rm -rf "$2"; ln -s "$1" "$2"; }; echo changed
     }
     one() {
-      local spec sd conv skills='[]' changed=false s n r binlink=null
+      local spec sd conv skills='[]' changed=false s n r binlink=null binkind=null
       spec="$(adapter "$1")" || fail "$EX_USAGE" usage "unknown agent: $1 (claude-code, codex, cursor, opencode, gemini-cli, all)"
       if [ "$SCOPE" = user ]; then sd="${spec%%|*}"; else sd="$(printf '%s' "$spec" | cut -d'|' -f2)"; fi
       conv="${spec##*|}"
@@ -72,13 +72,28 @@ case "$verb" in
         n="$(basename "$s")"; r="$(link "${s%/}" "$sd/$n")"; [ "$r" = unchanged ] || changed=true
         skills="$(jq -cn --argjson a "$skills" --arg n "$n" --arg p "$sd/$n" --arg r "$r" '$a + [{name: $n, path: $p, state: $r}]')"
       done
-      if [ "$SCOPE" = user ]; then binlink="$HOME/.local/bin/silkops"; r="$(link "$ROOT/bin/silkops" "$binlink")"; [ "$r" = unchanged ] || changed=true; fi
+      if [ "$SCOPE" = user ]; then
+        binlink="$HOME/.local/bin/silkops"
+        case "$ROOT" in
+          */plugins/cache/*/*/*)
+            # Installed as a plugin: versions live side by side under plugins/cache/<mkt>/<plugin>/<v>,
+            # so the PATH entry is a shim that runs the newest one, not a link into this version.
+            binkind=shim
+            local shim
+            # shellcheck disable=SC2016  # the shim's $d and $@ belong to the shim, not this script
+            shim="$(printf '#!/usr/bin/env bash\n# silkops shim (written by silkops install-agent): runs the newest installed plugin version.\nd="$(ls -d "%s"/*/ 2>/dev/null | sort -V | tail -1)"\n[ -n "$d" ] || { echo "silkops: no plugin version under %s" >&2; exit 1; }\nexec bash "${d}bin/silkops" "$@"\n' "$(dirname "$ROOT")" "$(dirname "$ROOT")")"
+            if [ -f "$binlink" ] && [ ! -L "$binlink" ] && [ "$(cat "$binlink")" = "$shim" ]; then r=unchanged; else
+              r=changed; [ "$DRY" = true ] || { mkdir -p "$(dirname "$binlink")"; rm -f "$binlink"; printf '%s\n' "$shim" >"$binlink"; chmod +x "$binlink"; }; fi ;;
+          *) binkind="link"; r="$(link "$ROOT/bin/silkops" "$binlink")" ;;
+        esac
+        [ "$r" = unchanged ] || changed=true
+      fi
       if [ "$SCOPE" = repo ] && [ "$DRY" = false ]; then
         bash "$ROOT/ops/conventions.sh" --dir "$DIR" >/dev/null   # AGENTS.md block + CLAUDE.md import
         if [ "$1" = gemini-cli ] && ! { [ -f "$DIR/GEMINI.md" ] && grep -qx '@AGENTS.md' "$DIR/GEMINI.md"; }; then printf '@AGENTS.md\n' >>"$DIR/GEMINI.md"; changed=true; fi
       fi
       jq -cn --arg a "$1" --arg sc "$SCOPE" --arg sd "$sd" --argjson sk "$skills" --arg conv "$conv" --argjson dry "$DRY" --argjson ch "$changed" \
-        --arg bin "${binlink:-}" '{agent: $a, scope: $sc, skills_dir: $sd, skills: $sk, bin: (if $bin == "" then null else $bin end), conventions: $conv, dry_run: $dry, linked: ($dry | not), unchanged: (($dry | not) and ($ch | not))}'
+        --arg bin "${binlink:-}" --arg bk "$binkind" '{agent: $a, scope: $sc, skills_dir: $sd, skills: $sk, bin: (if $bin == "" then null else $bin end), bin_kind: (if $bk == "null" then null else $bk end), conventions: $conv, dry_run: $dry, linked: ($dry | not), unchanged: (($dry | not) and ($ch | not))}'
     }
     [ "$AGENT" = all ] || adapter "$AGENT" >/dev/null || fail "$EX_USAGE" usage "unknown agent: $AGENT (claude-code, codex, cursor, opencode, gemini-cli, all)"
     if [ "$AGENT" = all ]; then

@@ -15,6 +15,10 @@ hand-written API glue. It never merges. A human does.
 /plugin marketplace add OpenZephyr/SilkOps
 /plugin install silkops@silkops
 ```
+then once, in a terminal, so the skills find the `silkops` command:
+```
+bash ~/.claude/plugins/cache/silkops/silkops/*/bin/silkops install-agent claude-code
+```
 
 **Codex, Cursor, OpenCode, Gemini CLI** (any agent that reads SKILL.md)
 
