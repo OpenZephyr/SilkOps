@@ -1,0 +1,1 @@
+{"id":501,"name":"ci","status":"completed","conclusion":"success","head_branch":"feat/u4","head_sha":"a1b2c3d4e5f60718293a4b5c6d7e8f9012345678","html_url":"https://gitea.test/example/silkops-harness/actions/runs/501","run_started_at":"2026-09-23T10:00:00Z","updated_at":"2026-09-23T10:09:00Z","run_attempt":1}
