@@ -21,5 +21,6 @@ zero blob uploads). Only `retag` is a settings write; the settings token is inje
 
 ## Guardrails
 
+- Hosts: GitLab registry today; GHCR and Gitea registries follow the same v2 API (v0.3 U4).
 - `SILKOPS_SETTINGS_TOKEN` is read by the script from the environment; never in argv or a URL.
 - Never delete a tag from this skill. Report both digests verbatim for the record.

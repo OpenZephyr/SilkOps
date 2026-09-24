@@ -27,5 +27,6 @@ is the marker, then the `u<N>` label, never the title. Closed issues are never e
 
 ## Guardrails
 
+- Hosts: GitHub milestones are by number; it has no blocking links, so edges come back as `fallback: managed_region`.
 - Every object carries the marker (`scripts/audit-milestone.sh` checks it).
 - No raw `glab api` calls here; a missing operation belongs in `ops/`, not in this skill.

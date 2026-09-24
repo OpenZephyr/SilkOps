@@ -45,11 +45,19 @@ own signatures travel with that project.
 
 ![one loop, ending at a human](docs/diagrams/ship-watch-loop.excalidraw.svg)
 
+![scripts speak verbs; a provider speaks its host](docs/diagrams/providers.excalidraw.svg)
+
 Excalidraw scenes under `docs/diagrams/`: `architecture` (skills over ops over glab),
-`fact-layers`, `ship-watch-loop`. The `.excalidraw` file is the source; the `.excalidraw.svg`
+`fact-layers`, `ship-watch-loop`, `providers`. The `.excalidraw` file is the source; the `.excalidraw.svg`
 beside it is the export with the scene embedded, so either is editable. Open with the Excalidraw
 PWA offline, `docker run -p 5000:80 excalidraw/excalidraw`, or the VS Code Excalidraw extension;
 export as SVG with "Embed scene" and save over the file.
+
+## Hosts
+
+GitLab is the source of truth and the first provider; GitHub runs behind the same verbs (pull
+requests as MRs, workflow runs as pipelines, `runs[]` per commit); Gitea is fixture-verified and
+flagged experimental. What each concept means on each host: `docs/providers.md`.
 
 ## Develop
 
