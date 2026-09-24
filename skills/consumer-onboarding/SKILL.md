@@ -30,7 +30,6 @@ per settings write, shown as current vs proposed. Read `references/preflight.md`
 
 ## Guardrails
 
-- Hosts: on GitHub a schedule is a workflow file to ship, a masked value is a secret, the
-  allow-list is `not_applicable` (`docs/providers.md`).
+- GitHub: a schedule is a workflow file to ship, a masked value is a secret, no allow-list.
 - Values never enter argv or the transcript; `variable.sh` refuses `--value`.
 - No token creation and no protected-branch edit here: those are the by-hand steps in `docs/tokens.md`.

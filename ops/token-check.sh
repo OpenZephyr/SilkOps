@@ -82,7 +82,6 @@ if [ -z "$USER_ID" ] || [ "$USER_ID" = null ]; then fail "$EX_OTHER" bad_identit
 
 TOKEN_INFO="$(api_opt personal_access_tokens/self)"
 
-ENC="$(urlenc "$PROJECT")"
 PROJ="$(p_project_get_as "$FOR" "$PROJECT" 2>/dev/null)" || fail "$EX_NOT_FOUND" not_found "project not found or not visible to this identity: $PROJECT" \
   "$(jq -n --arg p "$PROJECT" '{project: $p}')"
 PROJECT_ID="$(printf '%s' "$PROJ" | jq -r '.id')"

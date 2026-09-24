@@ -63,7 +63,8 @@ case "$url" in
   https://*/v2/*/tags/list*)
     [ "$auth" = bearer ] || respond 401 "$state/jwt-401.json"
     repo="${url#https://*/v2/}"; repo="${repo%/tags/list*}"
-    printf '{"name":"%s","tags":[%s]}\n' "$repo" "$(ls "$state/manifests" | grep -v '\.type$' | sed -E 's/\.json$//' | sed 's/.*/"&"/' | paste -sd, -)" >"$state/tags.json"
+    tags=""; for m in "$state"/manifests/*.json; do t="$(basename "$m" .json)"; tags="${tags:+$tags,}\"$t\""; done
+    printf '{"name":"%s","tags":[%s]}\n' "$repo" "$tags" >"$state/tags.json"
     respond 200 "$state/tags.json" 'Content-Type: application/json' ;;
   https://*/v2/*/blobs/*)
     respond 404 "$state/blob-404.json" ;;
