@@ -40,7 +40,7 @@ run_case u4 upsert-open -- --project "$PROJECT" "${ARGS[@]}"
 if [ "$(rc_of u4)" = 0 ] && out_of u4 | jq -e '.ok == true and .action == "updated" and .iid == 12' >/dev/null && [ "$(writes_of u4)" = 1 ] \
   && log_of u4 | grep -E -- '-X PUT .*/issues/12 .*input=present' >/dev/null \
   && jq -e --slurpfile b "$SCRATCH/u4/bodies/1.json" "$JQ_PARTS"' (.[0].description | parts) as $o | ($b[0].body.description | parts) as $n
-      | $n.post == $o.post and $n.inner == "\nnew body line\n" and ($n.pre | test("run=r2 -->")) and ($n.pre | sub("run=r2 -->"; "run=r1 -->")) == $o.pre' "$COMMON/issues-open.json" >/dev/null; then
+      | $n.post == $o.post and $n.inner == "\nnew body line\n" and ($n.pre | test("run=r2 -->")) and ($n.pre | test("v='"$PLUGIN_V"' ")) and ($n.pre | sub("run=r2 -->"; "run=r1 -->") | sub("v=[^ ]+ "; "v=0.1.0 ")) == $o.pre' "$COMMON/issues-open.json" >/dev/null; then
   pass "U4 open issue -> managed region replaced, marker run refreshed, text outside the region byte-identical"
 else fail "U4" "rc=$(rc_of u4) out=$(out_of u4) body=$(body_of u4 1 2>/dev/null | head -c 600)"; fi
 

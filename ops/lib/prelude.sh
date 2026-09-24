@@ -61,13 +61,14 @@ redact() {
 # the marker's run= is refreshed; without a region (object written by a human, found by
 # label) the marker + region are appended. Prints {had_region, changed, description}.
 managed_region_plan() {
-  printf '%s' "$1" | jq -c --arg body "$2" --arg marker "$3" --arg run "$4" '(.description // "") as $d |
+  local v; v="$(jq -r .version "$SILKOPS_ROOT/.claude-plugin/plugin.json")"
+  printf '%s' "$1" | jq -c --arg body "$2" --arg marker "$3" --arg run "$4" --arg v "$v" '(.description // "") as $d |
     "<!-- silkops:managed -->" as $open | "<!-- /silkops:managed -->" as $close
     | ("\n" + $body + "\n") as $inner
     | if ($d | contains($open)) and ($d | contains($close)) then
         ($d | split($open)) as $a | ($a[1:] | join($open) | split($close)) as $b
         | {had_region: true, changed: ($b[0] != $inner),
-           description: (($a[0] | sub("(?<m><!-- silkops: v=[^ ]+ plan=[^ ]+ unit=[^ ]+ run=)[^ ]+ -->"; "\(.m)\($run) -->"))
+           description: (($a[0] | sub("<!-- silkops: v=[^ ]+ plan=(?<p>[^ ]+) unit=(?<u>[^ ]+) run=[^ ]+ -->"; "<!-- silkops: v=\($v) plan=\(.p) unit=\(.u) run=\($run) -->"))
                          + $open + $inner + $close + ($b[1:] | join($close)))}
       else
         {had_region: false, changed: true,
