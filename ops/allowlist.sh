@@ -36,7 +36,11 @@ while [ $# -gt 0 ]; do
   esac
 done
 require_project "$PROJECT"
-p_gitlab_only "allowlist.sh"
+if [ "$SILKOPS_PROVIDER" != gitlab ]; then
+  # No job-token allow-list exists on this host (docs/providers.md): nothing to do, nothing written.
+  result "$(jq -cn --arg p "$PROJECT" '{project: $p, not_applicable: true, entries: [], message: "no job-token allow-list on this host; a package or registry visibility setting is the nearest concept"}')"
+  exit 0
+fi
 [ -n "$CMD" ] || usage "subcommand required: get | add"
 require_ci_token   # top level, so the exit-3 JSON and message reach the real streams (the wrappers re-check)
 

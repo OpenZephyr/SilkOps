@@ -39,6 +39,7 @@ usage() { fail "$EX_USAGE" usage "usage: schedule.sh --project <group/project> (
 # TZ_GIVEN separates "--timezone UTC" from the create-time default, so `update` can tell
 # which fields the operator actually asked to change.
 PROJECT=""; CMD=""; DESC=""; CRON=""; REF=""; TZ_NAME="UTC"; TZ_GIVEN=false; ALLOW=false; DRY=false; VAR_SPECS=()
+WDIR="$PWD"; TARGET_WF=""
 SID=""; ACTIVE=""
 var_key_ok() { [[ "$1" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || usage "variable key must match [A-Za-z_][A-Za-z0-9_]* (got: $1)"; }
 while [ $# -gt 0 ]; do
@@ -55,6 +56,8 @@ while [ $# -gt 0 ]; do
     --var-file) [ $# -ge 2 ] || usage; [[ "$2" == *=* ]] || usage "--var-file needs K=<path>"; var_key_ok "${2%%=*}"; VAR_SPECS+=("file"$'\t'"${2%%=*}"$'\t'"${2#*=}"); shift 2 ;;
     --var-env) [ $# -ge 2 ] || usage; var_key_ok "$2"; VAR_SPECS+=("env"$'\t'"$2"); shift 2 ;;
     --allow-frequent) ALLOW=true; shift ;;
+    --dir) [ $# -ge 2 ] || usage; WDIR="$2"; shift 2 ;;            # Actions hosts: the checkout holding the workflow files
+    --workflow) [ $# -ge 2 ] || usage; TARGET_WF="$2"; shift 2 ;;   # Actions hosts: the workflow the schedule should run
     --dry-run) DRY=true; shift ;;
     list|create|validate|update) [ -z "$CMD" ] || usage "one subcommand only"; CMD="$1"; shift ;;
     -h|--help) usage ;;
@@ -62,11 +65,10 @@ while [ $# -gt 0 ]; do
   esac
 done
 require_project "$PROJECT"
-p_gitlab_only "schedule.sh"
 [ -n "$CMD" ] || usage "subcommand required: list | validate | create | update"
 # list, create and update read through glab_ro, which needs SILKOPS_CI_TOKEN in CI: check at top level
 # so the exit-3 JSON and message reach the real streams (validate is offline).
-[ "$CMD" = validate ] || require_ci_token
+[ "$CMD" = validate ] || [ "$SILKOPS_PROVIDER" != gitlab ] || require_ci_token
 ENC="$(urlenc "$PROJECT")"
 
 # cron_check <expr> — prints "frequent" or "daily"; usage failure on a malformed expression.
@@ -87,6 +89,47 @@ validate() {
   [ "$kind" = frequent ] && FREQUENT=true || FREQUENT=false
 }
 summarize='map({id, description, ref, cron, cron_timezone, active, next_run_at, owner: {id: .owner.id, username: .owner.username}})'
+
+if [ "$SILKOPS_PROVIDER" != gitlab ]; then
+  # Actions hosts (github, gitea): a schedule is `on: schedule` in a workflow file, a change to
+  # ship with the commit and ship-mr skills, never a settings write (docs/providers.md).
+  WF_DIR=".github/workflows"; [ "$SILKOPS_PROVIDER" = gitea ] && WF_DIR=".gitea/workflows"
+  [ ${#VAR_SPECS[@]} -eq 0 ] || usage "schedule variables are repository variables on this host: use variable.sh"
+  case "$CMD" in
+    list)
+      L='[]'
+      for f in "$WDIR/$WF_DIR"/*.yml "$WDIR/$WF_DIR"/*.yaml; do
+        [ -f "$f" ] || continue
+        while IFS= read -r c; do L="$(printf '%s' "$L" | jq -c --arg id "$f" --arg c "$c" --arg d "$(sed -n 's/^name:[[:space:]]*//p' "$f" | head -1)" '. + [{id: $id, description: $d, cron: $c, ref: null, active: true, owner: null}]')"; done \
+          < <(grep -E "^[[:space:]]*-[[:space:]]*cron:" "$f" | sed -E "s/^[^:]*:[[:space:]]*['\"]?//; s/['\"]?[[:space:]]*$//")
+      done
+      result "$(jq -cn --arg p "$PROJECT" --argjson s "$L" '{project: $p, schedules: $s, source: "workflow files"}')" ;;
+    validate)
+      [ -n "$CRON" ] || usage "validate needs --cron"; validate
+      result "$(jq -cn --arg c "$CRON" --argjson f "$FREQUENT" '{cron: $c, frequent: $f, fires_at_most_daily: ($f | not)}')" ;;
+    create)
+      if [ -z "$DESC" ] || [ -z "$CRON" ] || [ -z "$REF" ]; then usage "create needs --description, --cron and --ref"; fi
+      validate
+      SLUG="$(printf '%s' "$DESC" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-|-$//g')"
+      OUT="$WDIR/$WF_DIR/silkops-$SLUG.yml"
+      if [ -n "$TARGET_WF" ]; then JOB="  run:\n    uses: ./$WF_DIR/$TARGET_WF\n    secrets: inherit"
+      else JOB="  run:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo \"scheduled: $DESC\"  # replace with the job this schedule should run"; fi
+      BODY="$(printf '# %s — written by silkops schedule; the schedule lives here, not in a setting\nname: %s\non:\n  schedule:\n    - cron: '"'"'%s'"'"'\n  workflow_dispatch: {}\njobs:\n%b\n' "$DESC" "$DESC" "$CRON" "$JOB")"
+      if [ "$DRY" = true ]; then result "$(jq -cn --arg p "$OUT" --arg b "$BODY" --argjson f "$FREQUENT" '{dry_run: true, action: "file_written", path: $p, proposed: $b, frequent: $f}')"; exit 0; fi
+      [ ! -e "$OUT" ] || fail "$EX_REFUSED" exists "$OUT already exists; use update --id $OUT --cron …"
+      mkdir -p "$(dirname "$OUT")"; printf '%s\n' "$BODY" >"$OUT"
+      result "$(jq -cn --arg p "$OUT" --arg r "$REF" --argjson f "$FREQUENT" '{action: "file_written", path: $p, ref: $r, frequent: $f, next: "commit the file and ship it as a change (commit, ship-mr); the schedule is live once merged"}')" ;;
+    update)
+      [ -n "$SID" ] && [ -f "$SID" ] || fail "$EX_NOT_FOUND" not_found "--id must be the workflow file path on this host"
+      [ -n "$CRON" ] || usage "update on this host changes --cron only"
+      validate
+      if [ "$DRY" = true ]; then result "$(jq -cn --arg p "$SID" --arg c "$CRON" '{dry_run: true, action: "file_updated", path: $p, proposed: {cron: $c}}')"; exit 0; fi
+      sed -i.bak -E "s|^([[:space:]]*-[[:space:]]*cron:).*|\1 '$CRON'|" "$SID" && rm -f "$SID.bak"
+      result "$(jq -cn --arg p "$SID" --arg c "$CRON" '{action: "file_updated", path: $p, cron: $c, next: "commit and ship the change"}')" ;;
+    *) usage "unknown subcommand: $CMD" ;;
+  esac
+  exit 0
+fi
 
 case "$CMD" in
   list)

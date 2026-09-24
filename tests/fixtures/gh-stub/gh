@@ -26,6 +26,10 @@ if [ -n "$input" ] && [ -n "${GH_STUB_BODY_DIR:-}" ]; then
   { printf '{"method":"%s","path":"%s","body":' "$method" "$path"; cat "$input"; printf '}\n'; } >"$GH_STUB_BODY_DIR/$((n + 1)).json"
 fi
 scenario="${GH_STUB_SCENARIO:-}"
+case "${args[0]:-}" in
+  secret|variable) cat >/dev/null; echo '{"ok":true}'; exit 0 ;;     # value arrives on stdin, never argv
+  auth) [ "${args[1]:-}" = token ] && { echo "${GH_TOKEN:-ghp_STUBTOKEN000000}"; exit 0; } ;;
+esac
 if [ "${args[0]:-}" = release ]; then echo '{"url":"https://github.com/example/silkops-harness/releases/tag/silkops-harness--v0.2.0"}'; exit 0; fi
 if [ -n "$scenario" ] && [ -f "$scenario/routes.tsv" ]; then
   argv_joined="$(printf ' %s' "${args[@]}")"

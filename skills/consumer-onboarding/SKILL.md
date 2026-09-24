@@ -30,6 +30,7 @@ per settings write, shown as current vs proposed. Read `references/preflight.md`
 
 ## Guardrails
 
-- Hosts: GitLab-only until v0.3 U4 (GitHub: schedules are workflow files, secrets go via `gh`).
+- Hosts: on GitHub a schedule is a workflow file to ship, a masked value is a secret, the
+  allow-list is `not_applicable` (`docs/providers.md`).
 - Values never enter argv or the transcript; `variable.sh` refuses `--value`.
 - No token creation and no protected-branch edit here: those are the by-hand steps in `docs/tokens.md`.

@@ -51,13 +51,40 @@ while [ $# -gt 0 ]; do
   esac
 done
 require_project "$PROJECT"
-p_gitlab_only "variable.sh"
 [ -n "$CMD" ] || usage "subcommand required: list | set"
 # `list` reads under the session identity (glab_ro): in CI that needs SILKOPS_CI_TOKEN — check
 # at top level so the exit-3 JSON and message reach the real streams. `set` uses the settings
 # token only.
 [ "$CMD" != list ] || require_ci_token
 ENC="$(urlenc "$PROJECT")"
+
+# --- hosts with Actions-style variables and secrets (github, gitea): a masked value is a secret,
+# a plain one a variable; `protected` has no meaning there and is reported as not applicable.
+if type p_has_secrets >/dev/null 2>&1; then
+  ALL="$(p_variable_list "$PROJECT")" || fail "$EX_NOT_FOUND" not_found "could not list variables and secrets of $PROJECT"
+  if [ "$CMD" = list ]; then result "$(jq -cn --arg p "$PROJECT" --argjson v "$ALL" '{project: $p, variables: $v}')"; exit 0; fi
+  [[ "$KEY" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || usage "--key must match [A-Za-z_][A-Za-z0-9_]*"
+  TMP="$(mktemp -d "${TMPDIR:-/tmp}/silkops-variable.XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
+  if [ -n "$VALUE_FILE" ]; then [ -f "$VALUE_FILE" ] || usage "--value-file not found: $VALUE_FILE"; printf '%s' "$(cat "$VALUE_FILE")" >"$TMP/value"
+  elif [ -n "${SILKOPS_VAR_VALUE:-}" ]; then printf '%s' "$SILKOPS_VAR_VALUE" >"$TMP/value"; unset SILKOPS_VAR_VALUE
+  else usage "set needs --value-file <f> or SILKOPS_VAR_VALUE in the environment"; fi
+  [ -s "$TMP/value" ] || usage "the value is empty"
+  CUR="$(printf '%s' "$ALL" | jq -c --arg k "$KEY" '[.[] | select(.key == $k)] | first // null')"
+  CUR_MASKED="$(printf '%s' "$CUR" | jq -r '.masked // false')"
+  [ -n "$MASKED" ] || MASKED="$CUR_MASKED"
+  [ "$CUR" = null ] && ACTION=created || ACTION=updated
+  if [ "$CUR_MASKED" = true ] && [ "$MASKED" = false ] && [ "$ALLOW_UNMASK" = false ]; then
+    fail "$EX_REFUSED" unmask_refused "$KEY is a secret on $PROJECT and this write would make it a plain variable; pass --allow-unmask to do that deliberately" "$(jq -cn --arg k "$KEY" --argjson cur "$CUR" '{key: $k, current: $cur}')"
+  fi
+  KIND=variable; [ "$MASKED" = true ] && KIND=secret
+  if [ "$DRY" = true ]; then
+    result "$(jq -cn --arg p "$PROJECT" --arg a "$ACTION" --arg k "$KEY" --argjson m "$MASKED" --arg kind "$KIND" --argjson cur "$CUR" '{project: $p, dry_run: true, action: $a, key: $k, masked: $m, kind: $kind, current: $cur, protected_not_applicable: true}')"
+    exit 0
+  fi
+  p_variable_set "$PROJECT" "$KEY" "$MASKED" "$TMP/value" >/dev/null || fail "$EX_OTHER" write_failed "could not set $KIND $KEY on $PROJECT" "$(jq -cn --arg k "$KEY" '{key: $k}')"
+  result "$(jq -cn --arg a "$ACTION" --arg k "$KEY" --argjson m "$MASKED" --arg kind "$KIND" --argjson cur "$CUR" '{action: $a, key: $k, masked: $m, protected: false, protected_not_applicable: true, kind: $kind, prior: $cur}')"
+  exit 0
+fi
 
 if [ "$CMD" = list ]; then
   V="$(api_get "projects/$ENC/variables?per_page=100" 2>/dev/null)" || fail "$EX_NOT_FOUND" not_found "could not list variables of $PROJECT (Maintainer needed)"

@@ -36,8 +36,40 @@ p_member_level() {
   [ -n "$login" ] || return 1
   _gh_get "$(_repo "$1")/collaborators/$login/permission" | jq -c '{access_level: ({admin: 50, maintain: 40, write: 30, triage: 20, read: 10}[.role_name // .permission] // 0), role_name: (.role_name // .permission)}'
 }
-p_protection_read() { echo "protection read is not mapped on github (rulesets are read in v0.3 U4)" >&2; return 1; }
+# branch protection of the default branch, in GitLab's shape (one entry, levels from the rules)
+p_protection_read() {
+  local def; def="$(_gh_get "$(_repo "$1")" | jq -r '.default_branch')"
+  _gh_get "$(_repo "$1")/branches/$def/protection" 2>/dev/null | jq -c --arg b "$def" '[{name: $b,
+    push_access_levels: [{access_level: (if .restrictions then 50 else 30 end)}],
+    merge_access_levels: [{access_level: (if .required_pull_request_reviews then 40 else 30 end)}],
+    required_reviews: (.required_pull_request_reviews.required_approving_review_count // 0),
+    required_checks: [.required_status_checks.contexts[]?], enforce_admins: (.enforce_admins.enabled // false)}]'
+}
+p_protection_summary() { jq -c '.[0] | {required_reviews, required_checks, enforce_admins}' 2>/dev/null || echo null; }
+p_identity_as()        { p_user_me; }
+p_project_get_as()     { p_project_get "$2"; }
+p_member_level_as()    { p_member_level "$2" "$3"; }
+p_protection_read_as() { p_protection_read "$_GH_PROJECT"; }
 p_raw() { _gh_get "$2"; }
+# --- Actions variables and secrets (variable.sh) ------------------------------------------
+# list: variables plain, secrets as masked entries with no value anywhere
+p_variable_list() {
+  local v s
+  v="$(_gh_get "$(_repo "$1")/actions/variables?per_page=100" | jq -c '[.variables[] | {key: .name, masked: false, protected: false, kind: "variable", created_at}]')"
+  s="$(_gh_get "$(_repo "$1")/actions/secrets?per_page=100" | jq -c '[.secrets[] | {key: .name, masked: true, protected: false, kind: "secret", created_at}]')"
+  jq -cn --argjson v "$v" --argjson s "$s" '$v + $s'
+}
+# p_variable_set <P> <key> <masked:true|false> <value-file> — gh does the encryption; the value is on stdin
+p_variable_set() {
+  if [ "$3" = true ]; then _gh secret set "$2" --repo "$1" <"$4"; else _gh variable set "$2" --repo "$1" <"$4"; fi
+}
+p_has_secrets() { return 0; }
+# --- registry hooks: GHCR over the same v2 API -----------------------------------------------
+p_registry_host()      { echo "${SILKOPS_REGISTRY_HOST:-ghcr.io}"; }
+p_registry_repo()      { case "$2" in .|/) echo "$1" ;; *) echo "$(_owner "$1")/${2#/}" ;; esac; }
+p_registry_token_url() { echo "https://$(p_registry_host)/token?scope=repository:$1:$2"; }
+p_registry_basic()     { local t; t="${GH_TOKEN:-$(gh auth token 2>/dev/null || true)}"; echo "user = \"$(_owner "$1"):${t}\""; }
+p_registry_reads_api() { return 1; }
 # --- pull requests as merge requests ---------------------------------------------------
 _owner() { printf '%s' "${1%%/*}"; }
 p_mr_find_by_branch() { _gh_get "$(_repo "$1")/pulls?head=$(_owner "$1"):$(urlenc "$2")&state=open&per_page=${3:-10}" | jq -c "[.[] | $_pr_norm]"; }
