@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Release: on tag silkops-harness--vX.Y.Z, confirm plugin.json agrees, build the tarball the
 # ci-cd factory pins, and upload it (plus its sha256) to this project's generic package
-# registry as silkops-harness/X.Y.Z/silkops-harness-X.Y.Z.tar.gz (plan KTD10).
+# registry as silkops-harness/X.Y.Z/silkops-harness-X.Y.Z.tar.gz (plan KTD10). The package and
+# tag names keep the `silkops-harness` prefix on purpose: the image factory in ci-cd pins them.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # shellcheck source=../ops/lib/prelude.sh

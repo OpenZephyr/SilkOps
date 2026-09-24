@@ -1,4 +1,4 @@
-# silkops-harness
+# SilkOps
 
 A dev-loop harness for coding agents on GitLab, GitHub and Gitea. Skills compose small
 operations scripts over the host's CLI, so a session commits, ships a branch, watches its
@@ -9,20 +9,25 @@ hand-written API glue. It never merges. A human does.
 
 ## Install
 
-1. Get the code: `git clone https://github.com/OpenZephyr/SilkOps.git`, or unpack the release asset.
-2. Link it into your agent:
+**Claude Code**
 
-   ```
-   bin/silkops install-agent all        # or: claude-code | codex | cursor | opencode | gemini-cli
-   bin/silkops doctor                   # what this machine has, which host it sees
-   ```
+```
+/plugin marketplace add OpenZephyr/SilkOps
+/plugin install silkops@silkops
+```
 
-   `install-agent` links the skills where that agent discovers them, puts `silkops` in
-   `~/.local/bin`, and writes the conventions import the agent reads (`adapters/<name>/README.md`).
-   Claude Code can use the plugin instead: `claude plugin marketplace add OpenZephyr/SilkOps`.
+**Codex, Cursor, OpenCode, Gemini CLI** (any agent that reads SKILL.md)
 
-Requirements: `jq`, `curl`, Python 3.9, and the host CLI: `glab` for GitLab, `gh` for GitHub,
-a `GITEA_TOKEN` for Gitea. Tokens come from the environment only, never argv or a URL.
+```
+git clone https://github.com/OpenZephyr/SilkOps.git ~/.silkops
+~/.silkops/bin/silkops install-agent all      # or one: codex | cursor | opencode | gemini-cli | claude-code
+```
+
+That links the nine skills where the agent looks, puts `silkops` in `~/.local/bin`, and writes the
+conventions import the agent reads. Then `silkops doctor` shows what the machine has. Per-agent
+notes: `adapters/<name>/README.md`. Requirements: `jq`, `curl`, Python 3.9, and the host CLI
+(`glab` for GitLab, `gh` for GitHub, a `GITEA_TOKEN` for Gitea). Tokens come from the environment
+only, never argv or a URL.
 
 ## One command, one JSON result
 

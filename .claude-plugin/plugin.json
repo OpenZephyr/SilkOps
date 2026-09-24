@@ -1,8 +1,8 @@
 {
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
-  "name": "silkops-harness",
+  "name": "silkops",
   "version": "0.3.0",
-  "description": "silkOps operating harness: GitLab dev-loop skills over glab-backed operations scripts",
+  "description": "SilkOps: dev-loop skills for coding agents over glab, gh and Gitea; ships, watches, triages and files issues, never merges",
   "author": {
     "name": "Aqua",
     "email": "dev@openzephyr.com"
@@ -11,4 +11,3 @@
   "repository": "https://github.com/OpenZephyr/SilkOps",
   "license": "MIT"
 }
-

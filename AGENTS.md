@@ -1,6 +1,6 @@
-# silkops-harness — repo conventions
+# SilkOps — repo conventions
 
-This repo is the silkOps operating harness: skills (`skills/`) that compose operations
+This repo is SilkOps (GitLab project `silkops-harness`; plugin id `silkops`): skills (`skills/`) that compose operations
 scripts (`ops/`) over `glab`, plus the core facts they share. Plans of record:
 `ci-cd/docs/plans/2026-09-02-2334-feat-silkops-harness-plan.md` (v0.1) and
 `ci-cd/docs/plans/2026-09-22-1200-feat-silkops-harness-public-split-plan.md` (v0.2).

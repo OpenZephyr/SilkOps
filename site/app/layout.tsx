@@ -9,7 +9,7 @@ const ibmMono = IBM_Plex_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'silkops-harness — a GitLab dev-loop harness for coding agents',
+  title: 'SilkOps — a GitLab dev-loop harness for coding agents',
   description:
     'An open-source (MIT) Claude Code plugin of small skills that compose bash/Python ops over the GitLab CLI: commit, ship an MR, watch the pipeline, triage failures against recorded facts. A human always merges.',
 }
