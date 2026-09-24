@@ -1,0 +1,6 @@
+GET	repos/example/silkops-harness	../common/repo.json
+GET	user	../common/user.json
+GET	repos/*/actions/variables*	variables.json
+GET	repos/*/actions/secrets*	secrets.json
+GET	repos/*/branches/main/protection	protection.json
+GET	repos/*/collaborators/*/permission	permission.json

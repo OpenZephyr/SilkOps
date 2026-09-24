@@ -15,11 +15,11 @@ where one exists, so nothing downstream breaks and nothing is renamed.
 | triage note | MR note | PR issue comment | PR comment |
 | plan container | milestone | milestone (repo milestones by number; Projects v2 is GraphQL-only and out of scope) | milestone |
 | dependency link | issue link `blocks` (`relates_to` when the tier refuses) | none in REST: `fallback: managed_region` and a `Blocked by #n` line | issue dependencies API |
-| schedule | pipeline schedule (settings API) | `on: schedule` in a workflow file: a change to ship, never a settings write (U4) | same as github |
-| CI variable / secret | project variable, masked and protected | Actions variable / secret via `gh variable set` / `gh secret set` on stdin (U4) | Actions variable / secret API |
-| registry | GitLab registry v2 | GHCR v2 (U4) | Gitea registry v2 |
-| job-token allow-list | project setting | not a concept: `not_applicable` (U4) | not a concept |
-| protected branch (read) | `protected_branches` | branch protection / rulesets (U4; until then the read verb reports null) | branch protections |
+| schedule | pipeline schedule (settings API) | `on: schedule` in a workflow file written by `schedule.sh create` (`action: file_written`): a change to ship, never a settings write | same as github, under `.gitea/workflows` |
+| CI variable / secret | project variable, masked and protected | masked → Actions secret (`gh secret set`, value on stdin), plain → Actions variable; `protected` is `not_applicable` | Actions variable / secret API |
+| registry | GitLab registry v2 (tags and digests via the GitLab API) | GHCR v2: `ghcr.io/<owner>/<image>`, token exchange with `GH_TOKEN` | Gitea registry v2 |
+| job-token allow-list | project setting | not a concept: `not_applicable`, exit 0, nothing written | not a concept |
+| protected branch (read) | `protected_branches` | default-branch protection, summarised as `protection {required_reviews, required_checks, enforce_admins}` | branch protections |
 | identity | glab session, `SILKOPS_CI_TOKEN` in CI | `gh` login or `GH_TOKEN` | `GITEA_TOKEN` |
 
 ## Status values
@@ -34,8 +34,8 @@ Runs and jobs report the harness's status words on every host: `running`, `succe
   records the `depends_on_line` in the target issue's managed region.
 - `fallback: relates_to` (`issue-link`, gitlab): the tier refuses `blocks`; a `relates_to` link is made.
 - `not_applicable` (`allowlist`, github and gitea): no job-token allow-list exists; exit 0, nothing to do.
-- `p_gitlab_only` (`schedule`, `variable`, `allowlist`, `registry`): GitLab-only until their
-  provider mapping lands in v0.3 U4; exit 2 with the reason on any other provider.
+- `p_gitlab_only`: the guard the settings scripts wore before their mappings landed (v0.3 U4); kept
+  in `ops/lib/provider.sh` for a future provider that lacks a mapping.
 - `experimental: true` (gitea): every result until a live run clears it.
 
 ## Adding a provider

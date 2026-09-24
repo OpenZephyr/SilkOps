@@ -39,11 +39,10 @@ while [ $# -gt 0 ]; do
   esac
 done
 require_project "$PROJECT"
-p_gitlab_only "registry.sh"
 CMD="${POS[0]:-}"; IMAGE="${POS[1]:-}"
 [ -n "$IMAGE" ] || usage "<image> is required"
-case "$IMAGE" in .|/) REPO="$PROJECT" ;; *) REPO="$PROJECT/${IMAGE#/}" ;; esac
-require_ci_token   # top level, so the exit-3 JSON and message reach the real streams (the wrappers re-check)
+REPO="$(p_registry_repo "$PROJECT" "$IMAGE")"
+[ "$SILKOPS_PROVIDER" != gitlab ] || require_ci_token   # top level, so the exit-3 JSON and message reach the real streams
 ENC="$(urlenc "$PROJECT")"
 
 # --- reads via glab (session identity) ---------------------------------------
@@ -54,6 +53,30 @@ repo_record() {
   printf '%s' "$repos" | jq -ce --arg p "$REPO" '[.[] | select(.path == $p)] | first // empty' \
     || fail "$EX_NOT_FOUND" not_found "registry repository not found: $REPO"
 }
+if ! p_registry_reads_api && [ "$CMD" != retag ]; then
+  # Hosts without a registry API (GHCR, Gitea): tags and digests come from the v2 API itself.
+  TMP="$(mktemp -d "${TMPDIR:-/tmp}/silkops-registry.XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
+  TOK_URL="$(p_registry_token_url "$REPO" pull)"
+  CODE="$(curl -sS -K - -o "$TMP/jwt.json" -D "$TMP/jwt.hdr" -w '%{http_code}' -X GET "$TOK_URL" <<<"$(p_registry_basic "$PROJECT")" 2>"$TMP/curl.err")" || fail "$EX_OTHER" registry_error "could not reach the registry auth endpoint: $(redact <"$TMP/curl.err")"
+  [ "$CODE" = 200 ] || fail "$EX_ROLE" registry_denied "registry auth refused (HTTP $CODE) for $REPO"
+  BEARER="header = \"Authorization: Bearer $(jq -r '.token // .access_token' "$TMP/jwt.json")\""
+  V2="https://$(p_registry_host)/v2/$REPO"
+  case "$CMD" in
+    tags)
+      [ ${#POS[@]} -eq 2 ] || usage "tags takes exactly <image>"
+      CODE="$(curl -sS -K - -o "$TMP/tags.json" -D "$TMP/tags.hdr" -w '%{http_code}' -X GET "$V2/tags/list?n=1000" <<<"$BEARER" 2>"$TMP/curl.err")" || fail "$EX_OTHER" registry_error "tags list failed: $(redact <"$TMP/curl.err")"
+      [ "$CODE" = 200 ] || fail "$EX_NOT_FOUND" not_found "registry repository not found or denied: $REPO (HTTP $CODE)"
+      result "$(jq -c --arg r "$REPO" --arg h "$(p_registry_host)" '{repository: $r, location: ($h + "/" + $r), tags: [(.tags // [])[] | {name: ., path: ($h + "/" + $r + ":" + .)}]}' "$TMP/tags.json")" ;;
+    digest)
+      [ ${#POS[@]} -eq 3 ] || usage "digest takes <image> <tag>"; TAG="${POS[2]}"
+      CODE="$(curl -sS -K - -o "$TMP/m.json" -D "$TMP/m.hdr" -w '%{http_code}' -I -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.docker.distribution.manifest.list.v2+json" "$V2/manifests/$TAG" <<<"$BEARER" 2>"$TMP/curl.err")" || fail "$EX_OTHER" registry_error "manifest request failed: $(redact <"$TMP/curl.err")"
+      [ "$CODE" = 200 ] || fail "$EX_NOT_FOUND" not_found "tag not found: $REPO:$TAG (HTTP $CODE)"
+      D="$(grep -i '^docker-content-digest:' "$TMP/m.hdr" | head -1 | sed -e 's/^[^:]*:[[:space:]]*//' | tr -d '\r')"
+      result "$(jq -cn --arg r "$REPO" --arg t "$TAG" --arg d "$D" --arg h "$(p_registry_host)" '{repository: $r, tag: $t, digest: $d, location: ($h + "/" + $r + ":" + $t)}')" ;;
+    *) usage "unknown subcommand: $CMD" ;;
+  esac
+  exit 0
+fi
 case "$CMD" in
   tags)
     [ ${#POS[@]} -eq 2 ] || usage "tags takes exactly <image>"
@@ -75,8 +98,8 @@ esac
 # --- retag via the v2 API (settings token, curl -K -) ------------------------
 TAG="${POS[2]}"; NEW="${POS[3]}"
 [ "$TAG" != "$NEW" ] || usage "<tag> and <new-tag> are the same"
-require_settings_token "required to write to the registry"
-REGISTRY="${SILKOPS_REGISTRY_HOST:-registry.gitlab.com}"
+[ "$SILKOPS_PROVIDER" != gitlab ] || require_settings_token "required to write to the registry"
+REGISTRY="$(p_registry_host)"
 ACCEPT='application/vnd.docker.distribution.manifest.v2+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.oci.image.index.v1+json'
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/silkops-registry.XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
 CTX="$(jq -cn --arg r "$REPO" --arg s "$TAG" --arg t "$NEW" '{repository: $r, source_tag: $s, target_tag: $t}')"
@@ -91,8 +114,8 @@ hdr_value() { grep -i "^$1:" "$2" | head -n1 | sed -e 's/^[^:]*:[[:space:]]*//' 
 sha256_file() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
 
 SCOPE="pull,push"; [ "$DRY" = true ] && SCOPE="pull"
-JWT_URL="https://${GITLAB_HOST}/jwt/auth?service=container_registry&scope=repository:${REPO}:${SCOPE}"
-if ! CODE="$(rcurl "user = \"silkops:${SILKOPS_SETTINGS_TOKEN}\"" "$TMP/jwt.json" "$TMP/jwt.hdr" -X GET "$JWT_URL" 2>"$TMP/curl.err")"; then
+JWT_URL="$(p_registry_token_url "$REPO" "$SCOPE")"
+if ! CODE="$(rcurl "$(p_registry_basic "$PROJECT")" "$TMP/jwt.json" "$TMP/jwt.hdr" -X GET "$JWT_URL" 2>"$TMP/curl.err")"; then
   fail "$EX_OTHER" registry_error "could not reach the registry auth endpoint: $(redact <"$TMP/curl.err")" "$CTX"
 fi
 case "$CODE" in

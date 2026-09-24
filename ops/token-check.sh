@@ -54,6 +54,7 @@ case "$FOR" in settings|ci|session) ;; *) usage "--for must be settings, ci or s
 # api <path> — GET under the identity being checked. Token presence is checked
 # by the wrapper (exit 3) before glab is ever spawned.
 api() { p_raw "$FOR" "$1"; }   # the provider's identity probe under the chosen token
+export _GH_PROJECT="$PROJECT"
 # api_opt <path> — like api, but an HTTP error (404/403) yields "null" and
 # exit 0. stderr is dropped: the wrapper already redacts it, and a missing
 # optional endpoint is not worth a warning line.
@@ -75,18 +76,17 @@ role_name() {
 
 EXPECT_LEVEL=""; if [ -n "$EXPECT" ]; then EXPECT_LEVEL="$(role_level "$EXPECT")"; [ -n "$EXPECT_LEVEL" ] || usage "--expect-role must be Owner, Maintainer, Developer, Reporter, Planner or Guest"; fi
 # The token-presence check inside the wrapper fires on this first call.
-IDENTITY="$(api user)" || fail "$EX_NO_TOKEN" no_identity "could not resolve the ${FOR} identity (glab api user failed); is a token configured?"
+IDENTITY="$(p_identity_as "$FOR")" || fail "$EX_NO_TOKEN" no_identity "could not resolve the ${FOR} identity (glab api user failed); is a token configured?"
 USER_ID="$(printf '%s' "$IDENTITY" | jq -r '.id')"
 if [ -z "$USER_ID" ] || [ "$USER_ID" = null ]; then fail "$EX_OTHER" bad_identity "glab api user returned no id"; fi
 
 TOKEN_INFO="$(api_opt personal_access_tokens/self)"
 
-ENC="$(urlenc "$PROJECT")"
-PROJ="$(api "projects/$ENC" 2>/dev/null)" || fail "$EX_NOT_FOUND" not_found "project not found or not visible to this identity: $PROJECT" \
+PROJ="$(p_project_get_as "$FOR" "$PROJECT" 2>/dev/null)" || fail "$EX_NOT_FOUND" not_found "project not found or not visible to this identity: $PROJECT" \
   "$(jq -n --arg p "$PROJECT" '{project: $p}')"
 PROJECT_ID="$(printf '%s' "$PROJ" | jq -r '.id')"
 
-MEMBER="$(api_opt "projects/$ENC/members/all/$USER_ID")"
+MEMBER="$(p_member_level_as "$FOR" "$PROJECT" "$USER_ID" 2>/dev/null || echo null)"
 LEVEL="$(printf '%s' "$MEMBER" | jq -r '.access_level // 0')"
 ROLE="$(role_name "$LEVEL")"
 
@@ -94,7 +94,7 @@ CAN_MERGE=null; CAN_PUSH=null
 if [ "$FOR" = session ]; then
   # Informational only (KTD3): the session account may hold merge rights on main;
   # the never-merge property is enforced by skill text and the verification gate.
-  PB="$(api_opt "projects/$PROJECT_ID/protected_branches")"
+  PB="$(p_protection_read_as "$FOR" "$PROJECT_ID" 2>/dev/null || echo null)"
   if [ "$PB" != null ]; then
     # An access entry grants the user when it names them, or when it is a role
     # level (>0) at or below the user's own level. 0 = "No one".
@@ -120,6 +120,7 @@ fi
 
 REPORT="$(jq -n \
   --argjson operator "$OPERATOR" --arg ogroup "$OGROUP" --argjson in_group "$IN_GROUP" \
+  --argjson protection "$(printf '%s' "${PB:-null}" | p_protection_summary)" \
   --arg for "$FOR" --arg role "$ROLE" --argjson level "$LEVEL" \
   --argjson identity "$IDENTITY" --argjson token "$TOKEN_INFO" --argjson proj "$PROJ" \
   --argjson can_merge "$CAN_MERGE" --argjson can_push "$CAN_PUSH" \
@@ -128,7 +129,7 @@ REPORT="$(jq -n \
     token: (if $token == null then null else {scopes: $token.scopes, expires_at: $token.expires_at, active: $token.active} end),
     project: {id: $proj.id, path: $proj.path_with_namespace, default_branch: $proj.default_branch},
     access_level: $level, role: $role,
-    can_merge_protected: $can_merge, can_push_protected: $can_push,
+    can_merge_protected: $can_merge, can_push_protected: $can_push, protection: $protection,
     operator: $operator, operator_group: (if $ogroup == "" then null else $ogroup end), in_operator_group: $in_group}')"
 if [ -n "$EXPECT_LEVEL" ] && [ "$LEVEL" -lt "$EXPECT_LEVEL" ]; then
   fail "$EX_ROLE" insufficient_role "needs $EXPECT on $PROJECT (identity is $ROLE)" "$REPORT"

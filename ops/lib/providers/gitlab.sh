@@ -11,6 +11,18 @@ p_user_me()          { api_get user; }
 p_user_lookup()      { api_get "users?username=$(_enc "$1")"; }
 p_member_level()     { api_get "projects/$(_enc "$1")/members/all/$2"; }
 p_protection_read()  { api_get "projects/$1/protected_branches"; }            # $1 = numeric project id
+# identity-aware probes for token-check: <identity> is settings | ci | session
+p_identity_as()      { p_raw "$1" user; }
+p_project_get_as()   { p_raw "$1" "projects/$(_enc "$2")"; }
+p_member_level_as()  { p_raw "$1" "projects/$(_enc "$2")/members/all/$3"; }
+p_protection_read_as() { p_raw "$1" "projects/$2/protected_branches"; }   # $2 = numeric project id
+p_protection_summary() { echo null; }
+# registry hooks (registry.sh): host, repo path, token exchange URL, and the basic-auth user line
+p_registry_host()     { echo "${SILKOPS_REGISTRY_HOST:-registry.gitlab.com}"; }
+p_registry_repo()     { case "$2" in .|/) echo "$1" ;; *) echo "$1/${2#/}" ;; esac; }
+p_registry_token_url() { echo "https://${GITLAB_HOST}/jwt/auth?service=container_registry&scope=repository:$1:$2"; }
+p_registry_basic()    { echo "user = \"silkops:${SILKOPS_SETTINGS_TOKEN}\""; }
+p_registry_reads_api() { return 0; }   # tags/digest through the GitLab API; other hosts use v2
 # p_raw <identity> <path> — token-check's identity probe: the same path under a chosen token.
 p_raw() { case "$1" in settings) glab_settings api -X GET "$2" ;; ci) with_ci_token glab api -X GET "$2" ;; *) api_get "$2" ;; esac; }
 # --- merge requests -------------------------------------------------------------
