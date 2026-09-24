@@ -43,7 +43,7 @@ else fail "M2b" "rc=$(rc_of m2b) body=$(body_of m2b 1 2>/dev/null)"; fi
 run_case m3 milestone-found -- --project "$PROJECT" "${ARGS[@]}" --description-file "$DESC"
 if [ "$(rc_of m3)" = 0 ] && out_of m3 | jq -e '.ok == true and .action == "updated" and .id == 77 and .iid == 3' >/dev/null && [ "$(writes_of m3)" = 1 ] \
   && log_of m3 | grep -E -- '-X PUT .*/milestones/77 .*input=present' >/dev/null && ! log_of m3 | grep -E -- '/milestones/78' >/dev/null \
-  && body_of m3 1 | jq -e --arg o "$OPEN" --arg c "$CLOSE" '.body.description == ("<!-- silkops: v=0.1.0 plan=plan.md unit=milestone run=r2 -->\n" + $o + "\nnew milestone body\n" + $c + "\n\nHuman notes below.\n") and (.body | has("title") | not)' >/dev/null; then
+  && body_of m3 1 | jq -e --arg o "$OPEN" --arg c "$CLOSE" '.body.description == ("<!-- silkops: v='"$PLUGIN_V"' plan=plan.md unit=milestone run=r2 -->\n" + $o + "\nnew milestone body\n" + $c + "\n\nHuman notes below.\n") and (.body | has("title") | not)' >/dev/null; then
   pass "M3 found by exact title (not the look-alike) -> PUT with the managed region replaced, run refreshed, human text intact"
 else fail "M3" "rc=$(rc_of m3) out=$(out_of m3) body=$(body_of m3 1 2>/dev/null) log=$(log_of m3 | tr '\n' ';')"; fi
 

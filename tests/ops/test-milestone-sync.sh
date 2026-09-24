@@ -51,5 +51,11 @@ if [ "$(rc_of s4)" = 2 ] && [ "$(rc_of s4b)" = 2 ] && [ "$(calls_of s4)" = 0 ]; 
   pass "S4 exactly one of --plan / --issues, else exit 2 before any call"
 else fail "S4" "rc=$(rc_of s4)/$(rc_of s4b)"; fi
 
+# S5 (#68): a dry run on a plan whose milestone does not exist yet still prints the plan, zero writes
+run_case s5 sync-fresh -- --project "$PROJECT" --plan "$PLAN" --run r9 --dry-run
+if [ "$(rc_of s5)" = 0 ] && out_of s5 | jq -e '.dry_run == true and .milestone.action == "created" and .milestone.proposed == true and (.issues | length) == 2 and .issues[0].action == "created"' >/dev/null && [ "$(writes_of s5)" = 0 ]; then
+  pass "S5 (#68) fresh plan dry run: milestone reported as proposed, issues planned without it, zero writes"
+else fail "S5" "rc=$(rc_of s5) out=$(out_of s5 | head -c 500) writes=$(writes_of s5)"; fi
+
 echo "test-milestone-sync: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

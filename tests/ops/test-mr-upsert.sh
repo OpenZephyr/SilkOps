@@ -28,7 +28,7 @@ else fail "M2" "rc=$(rc_of m2) out=$(out_of m2) body=$(body_of m2 1 2>/dev/null)
 run_case m3 mr-open -- --project "$PROJECT" "${ARGS[@]}"
 if [ "$(rc_of m3)" = 0 ] && out_of m3 | jq -e '.ok == true and .action == "updated" and .iid == 7' >/dev/null && [ "$(writes_of m3)" = 1 ] \
   && log_of m3 | grep -E -- '-X PUT .*/merge_requests/7 .*input=present' >/dev/null \
-  && body_of m3 1 | jq -e '.body.description == "<!-- silkops: v=0.1.0 plan=plan.md unit=U4 run=r2 -->\n<!-- silkops:managed -->\nnew mr body\n<!-- /silkops:managed -->\n\nReviewer notes.\n"' >/dev/null \
+  && body_of m3 1 | jq -e '.body.description == "<!-- silkops: v='"$PLUGIN_V"' plan=plan.md unit=U4 run=r2 -->\n<!-- silkops:managed -->\nnew mr body\n<!-- /silkops:managed -->\n\nReviewer notes.\n"' >/dev/null \
   && ! log_of m3 | grep -E '/merge( |$)|/merge\?' >/dev/null; then
   pass "M3 open MR for the branch -> description region updated, text outside kept, never merged"
 else fail "M3" "rc=$(rc_of m3) out=$(out_of m3) body=$(body_of m3 1 2>/dev/null)"; fi

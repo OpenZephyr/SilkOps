@@ -27,7 +27,7 @@ else fail "G1" "rc=$(rc_of g1) out=$(out_of g1) body=$(body_of g1 1 2>/dev/null)
 run_case g2 "$GH/pr-open" SILKOPS_PROVIDER=github -- "${ARGS[@]}"
 if [ "$(rc_of g2)" = 0 ] && out_of g2 | jq -e '.action == "updated" and .iid == 7 and .provider == "github"' >/dev/null \
   && log_of g2 | grep -E -- 'api -X PATCH .*pulls/7' >/dev/null \
-  && body_of g2 1 | jq -e '.body.body == "<!-- silkops: v=0.1.0 plan=plan.md unit=U4 run=r2 -->\n<!-- silkops:managed -->\nnew mr body\n<!-- /silkops:managed -->\n\nReviewer notes.\n"' >/dev/null; then
+  && body_of g2 1 | jq -e '.body.body == "<!-- silkops: v='"$PLUGIN_V"' plan=plan.md unit=U4 run=r2 -->\n<!-- silkops:managed -->\nnew mr body\n<!-- /silkops:managed -->\n\nReviewer notes.\n"' >/dev/null; then
   pass "G2 github: open PR found by head branch -> managed region replaced via PATCH, reviewer text kept"
 else fail "G2" "rc=$(rc_of g2) out=$(out_of g2) body=$(body_of g2 1 2>/dev/null)"; fi
 

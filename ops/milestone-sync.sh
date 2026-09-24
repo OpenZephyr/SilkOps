@@ -69,7 +69,10 @@ if [ -n "$MS_TITLE" ]; then
   printf 'Milestone for `%s`. One issue per unit; identity by marker.\n' "$PLAN" >"$TMP/ms.md"
   MS="$(bash "$OPS/milestone-upsert.sh" --project "$PROJECT" --title "$MS_TITLE" --plan "$PLAN" --run "$RUN" --description-file "$TMP/ms.md" "${DRYARG[@]}")" \
     || { rc=$?; err "milestone-upsert failed for '$MS_TITLE'"; printf '%s\n' "$MS"; exit "$rc"; }
-  MS="$(printf '%s' "$MS" | jq -c --arg t "$MS_TITLE" '{title: $t, iid, id, action, web_url}')"
+  MS="$(printf '%s' "$MS" | jq -c --arg t "$MS_TITLE" '{title: $t, iid, id, action, web_url} + (if .dry_run == true and .action == "created" then {proposed: true} else {} end)')"
+  # In a dry run the milestone is not created, so the issue dry runs cannot resolve it by title (#68):
+  # plan them without it and say so in the report.
+  ISSUE_MS="$MS_TITLE"; [ "$(printf '%s' "$MS" | jq -r '.proposed // false')" != true ] || ISSUE_MS=""
 fi
 
 # --- issues: one upsert each, collecting unit -> iid ----------------------------------
@@ -80,7 +83,7 @@ for ((i = 0; i < N; i++)); do
   printf '%s' "$IS" | jq -r '.body' >"$TMP/body-$i.md"
   labels="$(printf '%s' "$IS" | jq -r --arg u "$ulabel" '((.labels // []) + [$u]) | unique | join(",")')"
   args=(--project "$PROJECT" --marker-unit "$unit" --plan "$PLAN" --run "$RUN" --title "$(printf '%s' "$IS" | jq -r '.title')" --body-file "$TMP/body-$i.md" --labels "$labels")
-  [ -z "$MS_TITLE" ] || args+=(--milestone "$MS_TITLE")
+  [ -z "${ISSUE_MS:-}" ] || args+=(--milestone "$ISSUE_MS")
   a="$(printf '%s' "$IS" | jq -r '.assignee // ""')"; [ -z "$a" ] || args+=(--assignee "$a")
   d="$(printf '%s' "$IS" | jq -r '.due_date // ""')"; [ -z "$d" ] || args+=(--due-date "$d")
   R="$(bash "$OPS/issue-upsert.sh" "${args[@]}" "${DRYARG[@]}")" || { rc=$?; err "issue-upsert failed for $unit"; printf '%s\n' "$R"; exit "$rc"; }
