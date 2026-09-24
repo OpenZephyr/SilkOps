@@ -25,7 +25,7 @@ done
 [[ "$TAG" =~ ^silkops-harness--v[0-9]+\.[0-9]+\.[0-9]+$ ]] || usage "--tag must be silkops-harness--vX.Y.Z"
 version="${TAG#silkops-harness--v}"
 name="silkops-harness-${version}.tar.gz"
-cmd="gh release create $TAG dist/$name dist/$name.sha256 --repo $REPO --title \"silkops-harness $version\" --notes-file dist/notes.md"
+cmd="gh release create $TAG dist/$name dist/$name.sha256 --repo $REPO --title \"SilkOps $version\" --notes-file dist/notes.md"
 if [ "$DRY" = true ]; then
   result "$(jq -cn --arg t "$TAG" --arg v "$version" --arg a "dist/$name" --arg c "$cmd" --arg r "$REPO" '{dry_run: true, repo: $r, tag: $t, version: $v, asset: $a, command: $c}')"
   exit 0
@@ -37,7 +37,7 @@ manifest="$(jq -r .version .claude-plugin/plugin.json)"
 mkdir -p dist
 git archive --format=tar.gz --prefix="silkops-harness-${version}/" -o "dist/${name}" "$TAG"
 ( cd dist && shasum -a 256 "$name" > "${name}.sha256" )
-printf 'Release %s of silkops-harness. Install: unpack, or add the repo as a Claude Code plugin marketplace.\n' "$version" >dist/notes.md
-gh release create "$TAG" "dist/$name" "dist/$name.sha256" --repo "$REPO" --title "silkops-harness $version" --notes-file dist/notes.md >"dist/release.out" 2>&1 \
+printf 'SilkOps %s. Install: `bin/silkops install-agent <agent>` from the unpacked tree, or `claude plugin marketplace add OpenZephyr/SilkOps`.\n' "$version" >dist/notes.md
+gh release create "$TAG" "dist/$name" "dist/$name.sha256" --repo "$REPO" --title "SilkOps $version" --notes-file dist/notes.md >"dist/release.out" 2>&1 \
   || fail "$EX_OTHER" release_failed "gh release create failed: $(redact <dist/release.out | tr '\n' ' ')"
 result "$(jq -cn --arg t "$TAG" --arg v "$version" --arg a "dist/$name" --arg r "$REPO" --arg u "$(tr -d '\n' <dist/release.out)" '{repo: $r, tag: $t, version: $v, asset: $a, url: $u}')"

@@ -20,7 +20,7 @@ const principles = [
 
 export function Why() {
   return (
-    <Section id="why" title="What is silkops-harness?">
+    <Section id="why" title="What is SilkOps?">
       <p className="max-w-2xl text-pretty leading-relaxed text-muted-foreground">
         Agents re-derive the same GitLab API glue, poll pipelines by hand, re-learn the same CI failures, and write
         verbose issues and notes. The harness makes each of those a named, repeatable, tested capability with one JSON

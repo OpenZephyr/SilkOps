@@ -1,4 +1,4 @@
-# silkops-harness CI: Tier 1 gates every push; the release job publishes the tarball the
+# SilkOps CI: Tier 1 gates every push; the release job publishes the tarball the
 # ci-cd factory pins (plan KTD10). Tier 2 evals run on demand (claude plugin eval is
 # early-access and non-gating).
 stages: [test, release]
