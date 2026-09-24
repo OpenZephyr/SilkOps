@@ -89,6 +89,17 @@ SLEEP_S="${SILKOPS_WATCH_SLEEP:-$INTERVAL}"
 # --- resolve the checkpoint --------------------------------------------------
 MRJ=null; DMS=null; HEAD_ID=null; MR_URL=null
 fetch_mr() { p_mr_get "$PROJECT" "$MR"; }
+RUNS='[]'
+# resolve_runs — when the MR reports no head pipeline, ask the provider for the runs of its head
+# sha: GitHub has one workflow run per workflow per commit (KTD3), GitLab one pipeline. The first
+# run is the checkpoint; all of them are reported in runs[].
+resolve_runs() {
+  local src sha
+  src="$(printf '%s' "$MRJ" | jq -r '.source_branch // ""')"; sha="$(printf '%s' "$MRJ" | jq -r '.sha // .head_pipeline.sha // ""')"
+  [ -n "$sha" ] || return 0
+  RUNS="$(p_run_for_ref_sha "$PROJECT" "$src" "$sha" 2>/dev/null | jq -c '[.[] | {id, name: (.name // null), status, web_url: (.web_url // null)}]' 2>/dev/null || echo '[]')"
+  [ "$RUNS" = '[]' ] || HEAD_ID="$(printf '%s' "$RUNS" | jq -c '.[0].id')"
+}
 read_mr() {  # sets DMS, HEAD_ID, MR_URL from $MRJ
   DMS="$(printf '%s' "$MRJ" | jq -c '.detailed_merge_status // null')"
   HEAD_ID="$(printf '%s' "$MRJ" | jq -c '.head_pipeline.id // null')"
@@ -105,7 +116,7 @@ if [ -n "$MR" ]; then
     if [ -n "$SHA" ]; then
       waited=0
       # prefix match: git prints abbreviated shas, GitLab reports the full one (#26)
-      while [[ "$(printf '%s' "$MRJ" | jq -r '.head_pipeline.sha // ""')" != "$SHA"* ]]; do
+      while [[ "$(printf '%s' "$MRJ" | jq -r '.head_pipeline.sha // .sha // ""')" != "$SHA"* ]]; do
         if [ "$waited" -ge "$WAIT" ]; then
           result "$(jq -cn --argjson iid "$MR" --arg sha "$SHA" --argjson head "$HEAD_ID" --arg hint "watch.sh --project $PROJECT --mr $MR --sha $SHA" \
             '{mr_iid: $iid, still_running: true, waiting_for_sha: $sha, head_pipeline_id: $head, terminal: false, ready: false, resume_hint: $hint}')"
@@ -120,6 +131,7 @@ if [ -n "$MR" ]; then
     # Right after mr-upsert creates the MR, GitLab has not created the pipeline yet (#30):
     # wait for one inside the budget instead of failing; the budget spent is a resumable report.
     waited=0
+    [ "$HEAD_ID" != null ] || resolve_runs
     while [ "$HEAD_ID" = null ]; do
       if [ "$waited" -ge "$WAIT" ]; then
         result "$(jq -cn --argjson iid "$MR" --argjson u "$MR_URL" --arg hint "watch.sh --project $PROJECT --mr $MR${SHA:+ --sha $SHA}" \
@@ -129,7 +141,7 @@ if [ -n "$MR" ]; then
       err "MR !$MR has no head pipeline yet; waiting ${INTERVAL}s"
       sleep "${SILKOPS_WATCH_SLEEP:-$INTERVAL}"; waited=$((waited + INTERVAL))
       MRJ="$(fetch_mr)" || fail "$EX_NOT_FOUND" not_found "merge request !$MR disappeared while waiting for its head pipeline"
-      read_mr
+      read_mr; [ "$HEAD_ID" != null ] || resolve_runs
     done
     PIPE_ID="$HEAD_ID"
   fi
@@ -190,7 +202,7 @@ report() {  # report <extra-json> — the single JSON result
       'if $e == null then $i else ([$e - $w, $i] | max) end')"
   fi
   result "$(jq -cn \
-    --argjson expected "$EXPECTED" --argjson resume_after "$resume_after" --argjson approvals "$APPROVALS" --argjson reason "$reason" \
+    --argjson expected "$EXPECTED" --argjson resume_after "$resume_after" --argjson approvals "$APPROVALS" --argjson reason "$reason" --argjson runs "$RUNS" \
     --arg project "$PROJECT" --argjson mr_iid "${MR:-null}" --argjson mr_url "$MR_URL" \
     --argjson pid "$PIPE_ID" --argjson pipe "$PIPE_JSON" --arg status "$STATUS" \
     --argjson terminal "$terminal" --argjson ready "$ready" --argjson dms "$DMS" \
@@ -209,7 +221,7 @@ report() {  # report <extra-json> — the single JSON result
      notes: $notes, errors: $errors, polls: $polls, waited_s: $waited, wait_s: $wait, interval_s: $interval,
      still_running: (($terminal | not)),
      expected_duration_s: $expected, resume_after_s: $resume_after,
-     approvals: $approvals, not_ready_reason: $reason,
+     approvals: $approvals, not_ready_reason: $reason, runs: $runs,
      resume_hint: $hint} + $extra')"
 }
 # resume_hint — the checkpoint carries the MR too, so a resumed watch keeps the superseded guard.

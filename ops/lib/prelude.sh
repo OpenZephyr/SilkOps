@@ -80,7 +80,7 @@ managed_region_plan() {
 # programming error: nothing reaches stdout and the script exits 1.
 result() {
   local out
-  if ! out="$(printf '%s' "${1:-}" | jq -ce 'if type == "object" then {ok: true} + . else error("result is not a JSON object") end' 2>/dev/null)"; then
+  if ! out="$(printf '%s' "${1:-}" | jq -ce --arg p "${SILKOPS_PROVIDER:-gitlab}" 'if type == "object" then {ok: true, provider: $p} + . else error("result is not a JSON object") end' 2>/dev/null)"; then
     err "internal: result() was given invalid JSON"
     exit "$EX_OTHER"
   fi

@@ -38,6 +38,7 @@ p_issue_search_description() { api_get "projects/$(_enc "$1")/issues?search=$(_e
 p_issue_list_by_label()      { api_get "projects/$(_enc "$1")/issues?labels=$(_enc "$2")&state=all&scope=all&per_page=100"; }
 p_issue_create()     { glab_ro api -X POST "projects/$(_enc "$1")/issues" --input "$2"; }
 p_issue_update()     { glab_ro api -X PUT "projects/$(_enc "$1")/issues/$2" --input "$3"; }
+p_has_issue_links()  { return 0; }
 p_issue_links()      { api_get "projects/$(_enc "$1")/issues/$2/links"; }
 # p_issue_link_post <P> <source iid> <target project id> <target iid> <type>
 p_issue_link_post()  { glab_ro api -X POST "projects/$(_enc "$1")/issues/$2/links" -f "target_project_id=$3" -f "target_issue_iid=$4" -f "link_type=$5"; }

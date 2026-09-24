@@ -1,0 +1,9 @@
+GET	repos/*/milestones*	../common/milestones.json
+PATCH	repos/*/milestones/3	../common/milestone-3.json
+GET	search/issues*	../common/search-empty.json
+GET	repos/*/issues?labels=*	../common/empty.json
+POST	repos/*/issues	../common/issue-created.json	201
+GET	users/aqua	../common/user.json
+GET	user/42	../common/user.json
+GET	repos/example/silkops-harness	../common/repo.json
+GET	user	../common/user.json

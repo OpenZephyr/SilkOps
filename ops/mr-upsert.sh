@@ -106,7 +106,7 @@ if [ "$FOUND" != null ]; then
   fi
   printf '%s' "$PLANNED" | jq -c '{description: .description}' >"$TMP/body.json"
   RESP="$(p_mr_update "$PROJECT" "$IID" "$TMP/body.json")" || fail "$EX_OTHER" update_failed "could not update MR !$IID" "$IDENT"
-  result "$(jq -cn --argjson i "$IDENT" --argjson r "$RESP" --argjson hp "$HP" --argjson f "$FOUND" --argjson sib "$(siblings "$IID")" '$i + {action: "updated", web_url: ($r.web_url // $i.web_url), head_pipeline_id: $hp, siblings: $sib, prior: {description: ($f.description // "")}}')"
+  result "$(jq -cn --argjson i "$IDENT" --argjson r "$RESP" --argjson hp "$HP" --argjson f "$FOUND" --argjson sib "$(siblings "$IID")" '$i + {action: "updated", web_url: ($r.web_url // $i.web_url), head_pipeline_id: $hp, siblings: $sib, prior: {description: ($f.description // "")}} + (if $r.number then {number: $r.number} else {} end)')"
   exit 0
 fi
 
@@ -123,4 +123,4 @@ jq -cn --arg s "$SRC" --arg t "$TGT" --arg title "$TITLE" --arg d "$DESC" '{sour
 RESP="$(p_mr_create "$PROJECT" "$TMP/body.json")" || fail "$EX_OTHER" create_failed "could not create the MR $SRC -> $TGT in $PROJECT"
 IID="$(printf '%s' "$RESP" | jq -r '.iid')"
 HP="$(head_pipeline_of "$IID" "$RESP")"
-result "$(printf '%s' "$RESP" | jq -c --argjson hp "$HP" --argjson m "$MARKER_ON" --argjson sib "$(siblings "$IID")" '{action: "created", iid: .iid, web_url: .web_url, source_branch: .source_branch, target_branch: .target_branch, head_pipeline_id: $hp, identity: "branch", marker: $m, siblings: $sib}')"
+result "$(printf '%s' "$RESP" | jq -c --argjson hp "$HP" --argjson m "$MARKER_ON" --argjson sib "$(siblings "$IID")" '{action: "created", iid: .iid, web_url: .web_url, source_branch: .source_branch, target_branch: .target_branch, head_pipeline_id: $hp, identity: "branch", marker: $m, siblings: $sib} + (if .number then {number} else {} end)')"

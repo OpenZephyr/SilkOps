@@ -12,7 +12,7 @@ fail() { echo "FAIL $1: $2"; FAIL=$((FAIL + 1)); }
 # shellcheck disable=SC2329  # invoked via the EXIT trap
 cleanup() { rm -rf "$SCRATCH"; }
 trap cleanup EXIT
-export PATH="$STUB_DIR:$PATH"
+export PATH="$STUB_DIR:$ROOT/tests/fixtures/gh-stub:$PATH"
 [ "$(command -v glab)" = "$STUB_DIR/glab" ] || { echo "glab stub is not first on PATH" >&2; exit 1; }
 # run_case <name> <scenario> <env KEY=VAL ...> -- <args...>   (scenario: stub dir name or absolute path)
 run_case() {
@@ -22,8 +22,9 @@ run_case() {
   while [ $# -gt 0 ] && [ "$1" != "--" ]; do envs+=("$1"); shift; done
   shift
   local d="$SCRATCH/$name"; mkdir -p "$d"
-  env -u GITLAB_TOKEN -u SILKOPS_SETTINGS_TOKEN -u SILKOPS_CI_TOKEN -u CI -u SILKOPS_VAR_VALUE \
+  env -u GITLAB_TOKEN -u SILKOPS_SETTINGS_TOKEN -u SILKOPS_CI_TOKEN -u CI -u SILKOPS_VAR_VALUE -u GH_TOKEN \
     GLAB_STUB_SCENARIO="$scenario" GLAB_STUB_LOG="$d/glab.log" GLAB_STUB_BODY_DIR="$d/bodies" \
+    GH_STUB_SCENARIO="$scenario" GH_STUB_LOG="$d/glab.log" GH_STUB_BODY_DIR="$d/bodies" \
     CURL_STUB_STATE="$d/state" CURL_STUB_LOG="$d/curl.log" "${envs[@]}" \
     bash "$SCRIPT" "$@" >"$d/out.log" 2>"$d/err.log"
   echo $? >"$d/rc"
