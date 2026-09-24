@@ -1,6 +1,6 @@
 # silkops-harness
 
-A GitLab dev-loop harness for coding agents: skills that compose small operations scripts over
+A dev-loop harness for coding agents on GitLab, GitHub and Gitea: skills that compose small operations scripts over
 `glab`, so a session ships a branch, watches its pipeline, triages a failure against recorded
 facts, and files issues from a plan without hand-written API glue. It never merges; a human does.
 
@@ -69,3 +69,5 @@ main-only mirror, and `ops/inbox.sh --repo OpenZephyr/SilkOps` lists what people
 
 Release: tag `silkops-harness--vX.Y.Z` on main (CI publishes the asset to GitLab), then
 `scripts/github-release.sh --repo OpenZephyr/SilkOps --tag <tag>` creates the GitHub Release.
+The asset is the tagged tree: `bin/`, `ops/`, `skills/`, `adapters/`, `facts/`, `docs/`; unpack it
+anywhere and run `bin/silkops doctor`.
