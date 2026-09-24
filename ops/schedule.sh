@@ -120,7 +120,7 @@ if [ "$SILKOPS_PROVIDER" != gitlab ]; then
       mkdir -p "$(dirname "$OUT")"; printf '%s\n' "$BODY" >"$OUT"
       result "$(jq -cn --arg p "$OUT" --arg r "$REF" --argjson f "$FREQUENT" '{action: "file_written", path: $p, ref: $r, frequent: $f, next: "commit the file and ship it as a change (commit, ship-mr); the schedule is live once merged"}')" ;;
     update)
-      [ -n "$SID" ] && [ -f "$SID" ] || fail "$EX_NOT_FOUND" not_found "--id must be the workflow file path on this host"
+      if [ -z "$SID" ] || [ ! -f "$SID" ]; then fail "$EX_NOT_FOUND" not_found "--id must be the workflow file path on this host"; fi
       [ -n "$CRON" ] || usage "update on this host changes --cron only"
       validate
       if [ "$DRY" = true ]; then result "$(jq -cn --arg p "$SID" --arg c "$CRON" '{dry_run: true, action: "file_updated", path: $p, proposed: {cron: $c}}')"; exit 0; fi
