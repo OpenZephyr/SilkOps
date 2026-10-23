@@ -44,6 +44,7 @@ p_project_get() { _gt_get "$(_repo "$1")" | jq -c '{id, path_with_namespace: .fu
 p_group_get()   { _gt_get "orgs/$1" | jq -c '{id, path: .username}'; }
 p_user_me()     { _gt_get user | jq -c '{id, username: .login, name: (.full_name // .login), bot: false}'; }
 p_user_lookup() { _gt_get "users/$1" 2>/dev/null | jq -c '[{id, username: .login}]' || echo '[]'; }
+p_user_id_by_username() { printf '%s\n' "$1"; }   # Gitea assigns by login: passthrough (#84)
 p_member_level() { _gt_get "$(_repo "$1")/collaborators/$2/permission" 2>/dev/null | jq -c '{access_level: ({owner: 50, admin: 50, write: 30, read: 10}[.permission] // 0), role_name: .permission}' || echo '{"access_level":0}'; }
 p_protection_read() { _gt_get "$(_repo "$1")/branch_protections" 2>/dev/null | jq -c '[.[] | {name: .branch_name, push_access_levels: [{access_level: 40}], merge_access_levels: [{access_level: 40}], required_reviews: (.required_approvals // 0), required_checks: (.status_check_contexts // []), enforce_admins: (.enable_push_whitelist // false)}]'; }
 p_protection_summary() { jq -c '.[0] | {required_reviews, required_checks, enforce_admins}' 2>/dev/null || echo null; }
@@ -87,8 +88,10 @@ _label_ids() {  # names (comma list) → ids, creating missing labels
 _issue_body() {  # GitLab-shaped file → Gitea fields (labels by id, assignees by login from ids)
   local ids='null' names; names="$(jq -r '(.labels // .add_labels // "")' "$2")"
   [ -z "$names" ] || ids="$(_label_ids "$names" "$1")"
-  jq -c --argjson ids "$ids" '{title, body: .description} + (if $ids != null then {labels: $ids} else {} end) + (if .milestone_id then {milestone: .milestone_id} else {} end) + (if .due_date then {due_date: (.due_date + "T00:00:00Z")} else {} end) | with_entries(select(.value != null))' "$2"
+  jq -c --argjson ids "$ids" '{title, body: .description} + (if $ids != null then {labels: $ids} else {} end) + (if .milestone_id then {milestone: .milestone_id} else {} end) + (if .due_date then {due_date: (.due_date + "T00:00:00Z")} else {} end)
+    + (if .assignee_ids then {assignees: [.assignee_ids[] | select(type == "string")]} else {} end) | with_entries(select(.value != null))' "$2"
 }
+p_issue_get()    { _gt_get "$(_repo "$1")/issues/$2" | jq -c "$_issue_norm"; }
 p_issue_create() { local b; b="$(mktemp)"; _issue_body "$1" "$2" >"$b"; _gt POST "$(_repo "$1")/issues" "$b" | jq -c "$_issue_norm"; rm -f "$b"; }
 p_issue_update() { local b; b="$(mktemp)"; _issue_body "$1" "$3" >"$b"; _gt PATCH "$(_repo "$1")/issues/$2" "$b" | jq -c "$_issue_norm"; rm -f "$b"; }
 p_has_issue_links() { return 0; }
