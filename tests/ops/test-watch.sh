@@ -159,6 +159,21 @@ if [ "$(rc_of w5)" = 6 ] && out_of w5 | jq -e '.ok == false and .error == "retry
   pass "W5 (AE7) 502 after the build-image: pushing marker with --retry -> no retry POST, exit 6, reason names the guard, full report"
 else fail "W5" "rc=$(rc_of w5) out=$(out_of w5) log=$(log_of w5 | tr '\n' ';')"; fi
 
+# --- #80 #83: a quota-killed job has an EMPTY trace; the host's failure_reason names it ---
+# The classifier gets --failure-reason and --job-name; the core ci_quota_exceeded fact matches
+# on failure_reason alone (permanent, not retry-safe), so --retry skips it as not transient.
+run_case w5q watch-failed-quota -- "${COMMON[@]}" --mr 7 --retry --wait 0
+if [ "$(rc_of w5q)" = 0 ] && out_of w5q | jq -e '.ok == true and .status == "failed" and .terminal == true and .ready == false
+      and .failed[0].name == "semgrep-sast" and .failed[0].failure_reason == "ci_quota_exceeded" and .failed[0].root_cause == []
+      and .failed[0].classification.fact == "ci_quota_exceeded" and .failed[0].classification.matched_on == "failure_reason"
+      and .failed[0].classification.class == "permanent" and .failed[0].classification.transient == false
+      and .failed[0].classification.retry_safe == false and .failed[0].classification.hit_count == 0
+      and (.failed[0].classification.reason | contains("compute quota"))
+      and .retried == [] and (.retry_skipped[0].reason | contains("not transient"))' >/dev/null \
+  && [ "$(retries_of w5q)" = 0 ] && [ "$(merge_calls w5q)" = 0 ]; then
+  pass "W5q (#80 #83) empty trace + failure_reason ci_quota_exceeded -> triage names ci_quota_exceeded on failure_reason, permanent, not retry-safe, no retry POST"
+else fail "W5q" "rc=$(rc_of w5q) out=$(out_of w5q) log=$(log_of w5q | tr '\n' ';')"; fi
+
 # --- superseded pipeline: never retried ---------------------------------------------
 # The head pipeline moves from 501 to 502 between the resolving MR read and the refresh.
 run_case w6 watch-failed-transient:watch-superseded GLAB_STUB_PHASE_MATCH='GET */merge_requests/7' -- "${COMMON[@]}" --mr 7 --retry --wait 0
@@ -377,6 +392,24 @@ if [ "$(rc_of w30)" = 0 ] && out_of w30 | jq -e '.failed[0].classification.fact 
   && [ "$(retries_of w30)" = 0 ]; then
   pass "W30 (U1) overlay fact wins over the core docker-hub-502 pattern; no retry; facts_files lists overlay then core"
 else fail "W30" "rc=$(rc_of w30) out=$(out_of w30 | head -c 1500) err=$(err_of w30 | tail -3)"; fi
+
+# --- (#73) green, but GitLab has not computed mergeability yet ---------------------------
+# MR reads: 1 resolve, 2 poll, 3+ re-reads. unchecked twice, then mergeable on the first re-read.
+run_case w31 watch-unchecked:watch-unchecked:watch-green GLAB_STUB_PHASE_MATCH="GET projects/*/merge_requests/7" -- "${COMMON[@]}" --mr 7 --wait 60 --interval 20
+if [ "$(rc_of w31)" = 0 ] && out_of w31 | jq -e '.status == "success" and .terminal == true and .ready == true and .detailed_merge_status == "mergeable" and .not_ready_reason == null and .waited_s == 20' >/dev/null \
+  && [ "$(merge_calls w31)" = 0 ]; then
+  pass "W31 (#73) unchecked after green -> the MR is re-read one interval later and the watch ends ready, no merge call"
+else fail "W31" "rc=$(rc_of w31) out=$(out_of w31 | jq -c '{status, terminal, ready, detailed_merge_status, not_ready_reason, waited_s}' 2>/dev/null) err=$(err_of w31 | tail -2)"; fi
+run_case w31b watch-unchecked -- "${COMMON[@]}" --mr 7 --wait 0
+if [ "$(rc_of w31b)" = 0 ] && out_of w31b | jq -e '.status == "success" and .terminal == true and .ready == false and .detailed_merge_status == "unchecked"
+      and (.not_ready_reason | test("still checking; re-run watch")) and .resume_after_s == 20 and .still_running == false' >/dev/null; then
+  pass "W31b (#73) still unchecked when the budget ends -> ready:false, a re-run reason and resume_after_s set"
+else fail "W31b" "rc=$(rc_of w31b) out=$(out_of w31b | jq -c '{status, terminal, ready, detailed_merge_status, not_ready_reason, resume_after_s}' 2>/dev/null)"; fi
+run_case w31c watch-unchecked -- "${COMMON[@]}" --mr 7 --wait 300 --interval 20
+if [ "$(rc_of w31c)" = 0 ] && out_of w31c | jq -e '.ready == false and .waited_s == 60 and .resume_after_s == 20' >/dev/null \
+  && [ "$(log_of w31c | grep -cE -- 'merge_requests/7 token=')" = 5 ]; then
+  pass "W31c (#73) the re-read is bounded: three extra MR reads inside a large budget, then the resumable report"
+else fail "W31c" "rc=$(rc_of w31c) mr_reads=$(log_of w31c | grep -cE -- 'merge_requests/7 token=') out=$(out_of w31c | jq -c '{ready, waited_s, resume_after_s}' 2>/dev/null)"; fi
 
 echo "test-watch: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

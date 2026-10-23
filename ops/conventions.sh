@@ -18,6 +18,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --dir) [ $# -ge 2 ] || usage "--dir needs a value"; DIR="$2"; shift 2 ;;
     --snippet) [ $# -ge 2 ] || usage; SNIPPET="$2"; shift 2 ;;
+    -h|--help) usage ;;
     *) usage "unknown argument: $1" ;;
   esac
 done

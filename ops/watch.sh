@@ -170,6 +170,9 @@ has_name() { jq -en --argjson a "$1" --arg n "$2" '$a | index($n) != null' >/dev
 is_terminal() {
   case "$1" in success|failed|canceled|skipped|manual) return 0 ;; *) return 1 ;; esac
 }
+# dms_pending — (#73) GitLab has not computed mergeability yet (right after a pipeline goes green).
+dms_pending() { case "$DMS" in '"unchecked"'|'"checking"') return 0 ;; *) return 1 ;; esac; }
+DMS_RECHECKS=3   # MR re-reads, one interval apart, before a pending merge status is reported
 
 report() {  # report <extra-json> — the single JSON result
   local failed_now
@@ -192,6 +195,8 @@ report() {  # report <extra-json> — the single JSON result
         conflict: "merge conflicts with the target branch",
         blocked_status: "blocked by another merge request",
         not_open: "the MR is not open",
+        unchecked: "detailed_merge_status still checking; re-run watch",
+        checking: "detailed_merge_status still checking; re-run watch",
         mergeable: null}[$d] // ("detailed_merge_status is " + ($d // "unknown")))
       | if . != null and $a != null and ($a.approvals_left // 0) > 0 then . + "; " + ($a.approvals_left | tostring) + " approval(s) outstanding" else . end')"
   fi
@@ -200,6 +205,8 @@ report() {  # report <extra-json> — the single JSON result
   if [ "$terminal" = false ]; then
     resume_after="$(jq -cn --argjson e "$EXPECTED" --argjson w "$ELAPSED" --argjson i "$INTERVAL" \
       'if $e == null then $i else ([$e - $w, $i] | max) end')"
+  elif [ "$ready" = false ] && dms_pending; then
+    resume_after="$INTERVAL"   # (#73) green, but mergeability is not computed yet: the skill resumes
   fi
   result "$(jq -cn \
     --argjson expected "$EXPECTED" --argjson resume_after "$resume_after" --argjson approvals "$APPROVALS" --argjson reason "$reason" --argjson runs "$RUNS" \
@@ -289,8 +296,12 @@ triage_job() {
     fi
     local fa=(); local fp
     while IFS= read -r fp; do fa+=(--facts "$fp"); done < <(facts_paths)
-    cl="$(python3 "$OPS/classify-failure.py" "$tf" "${fa[@]}" 2>/dev/null | redact \
-      | jq -c '{transient, retry_safe, fact, class, reason, step, no_retry_after, marker_hit_before_failure, marker_line_no, failure_line_no, hit_count: (.hits | length), facts_files: [.facts_file | split(",")[] | split("/") | last]}')" \
+    # the host's failure_reason (ci_quota_exceeded, runner_system_failure, …) and the job name
+    # let a fact match before the trace (an empty trace, a quota-killed job) or scope itself to
+    # particular jobs (facts schema 2, #80 #83)
+    local frs; frs="$(printf '%s' "$job" | jq -r '.failure_reason // ""')"
+    cl="$(python3 "$OPS/classify-failure.py" "$tf" "${fa[@]}" --failure-reason "$frs" --job-name "$name" 2>/dev/null | redact \
+      | jq -c '{transient, retry_safe, fact, matched_on, class, reason, step, no_retry_after, marker_hit_before_failure, marker_line_no, failure_line_no, hit_count: (.hits | length), facts_files: [.facts_file | split(",")[] | split("/") | last]}')" \
       || cl='{"transient":false,"retry_safe":false,"fact":null,"class":"unknown","reason":"classify-failure.py failed on the trace"}'
   else
     err "trace of job $id ($name) could not be fetched: $(redact <"$TMP/trace-$id.err" | tr '\n' ' ')"
@@ -470,6 +481,18 @@ while :; do
       err "$MSG"
       report "$(jq -cn --arg m "$MSG" '{ok: false, error: "retry_unsafe", message: $m}')"
       exit "$EX_RETRY_UNSAFE"
+    fi
+    # (#73) a pipeline that just went green leaves detailed_merge_status at unchecked/checking
+    # for a moment: re-read the MR a few times, one interval apart, inside what is left of the
+    # budget. Still pending when it ends -> ready:false with a resumable reason (report()).
+    if [ "$STATUS" = success ] && [ -n "$MR" ]; then
+      rechecks=0
+      while dms_pending && [ "$rechecks" -lt "$DMS_RECHECKS" ] && [ $((ELAPSED + INTERVAL)) -le "$WAIT" ]; do
+        err "pipeline $PIPE_ID is green but detailed_merge_status is $DMS; re-reading MR !$MR in ${INTERVAL}s"
+        sleep "$SLEEP_S"; ELAPSED=$((ELAPSED + INTERVAL)); rechecks=$((rechecks + 1))
+        if MRJ="$(fetch_mr)"; then read_mr; fi
+      done
+      if [ "$HEAD_ID" != null ] && [ "$HEAD_ID" != "$PIPE_ID" ]; then SUPERSEDED=true; else SUPERSEDED=false; fi
     fi
     report '{}'
     exit "$EX_OK"

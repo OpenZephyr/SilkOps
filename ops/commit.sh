@@ -62,7 +62,17 @@ fi
 
 # --- stage by name, commit only that -------------------------------------------
 if [ "${#PATHS[@]}" -gt 0 ]; then
-  git add -- "${PATHS[@]}"
+  # (#72) a path removed with `git rm` is gone from disk and staged as a deletion: `git add`
+  # would die with "pathspec did not match", while `git commit -- <path>` picks the deletion up.
+  # Only the other paths are added, and a failing add is a JSON error, not a raw git line.
+  ADD=()
+  for p in "${PATHS[@]}"; do
+    if [ ! -e "$p" ] && [ -n "$(git diff --cached --name-only --diff-filter=D -- "$p")" ]; then continue; fi
+    ADD+=("$p")
+  done
+  if [ "${#ADD[@]}" -gt 0 ]; then
+    git add -- "${ADD[@]}" 2>"$TMP/err" || fail "$EX_OTHER" add_failed "git add failed: $(redact <"$TMP/err" | tr '\n' ' ')"
+  fi
   git commit -q -F "$TMP/msg" -- "${PATHS[@]}" 2>"$TMP/err" || fail "$EX_OTHER" commit_failed "git commit failed: $(redact <"$TMP/err" | tr '\n' ' ')"
 else
   git commit -q -F "$TMP/msg" 2>"$TMP/err" || fail "$EX_OTHER" commit_failed "git commit failed: $(redact <"$TMP/err" | tr '\n' ' ')"
