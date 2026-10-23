@@ -6,33 +6,34 @@ argument-hint: "<mr-iid | pipeline-id> [--project <group/project>] [--wait <seco
 
 # watch-pipeline
 
-Result: one JSON line from `silkops watch` with `status`, `terminal`, `ready`,
-`not_ready_reason`, `still_running`, `resume_after_s`, `failed[]` (classification, root_cause,
-web_url, first_failure), `retried`, `resume_hint`. Never merges: "ready" is the end state.
+Result: one JSON line from `silkops watch`: `status`, `terminal`, `ready`, `not_ready_reason`,
+`expected_duration_s`/`expected_source`, `wait_s`, `resume_after_s`, `warnings[]`,
+`default_branch`, `failed[]`, `retried`, `resume_hint`. Never merges.
 
 ## Steps
 
-1. `--project` explicit (remote or URL). Target: `--mr <iid>` or `--pipeline <id>`; a URL gives both.
-   `silkops watch --project P --mr <iid> --wait 300 --interval 20 --note --plan <basename> --run <id>`.
-   No `--retry` on the first call.
-2. Act on the verdict, one line each:
-   - `still_running`: normal. Say `waited_s` of `expected_duration_s`; run `resume_hint`
-     verbatim with `--wait` = `resume_after_s` until `terminal`. No shell `timeout`, no hand
-     poll. `waiting_for: head_pipeline` = just pushed; same resume.
+1. `--project` explicit. `silkops watch --project P --mr <iid> --note --plan <basename>
+   --run <id>` (or `--pipeline <id>`). No `--wait`: the budget is the expected duration (ref,
+   default-branch or facts history) plus a margin, capped at 540 s. No `--retry` at first.
+2. Verdict, one line each:
+   - `still_running`: say `waited_s` of `expected_duration_s`; run `resume_hint` verbatim with
+     `--wait` = `resume_after_s` until `terminal` (also for `waiting_for: head_pipeline`);
+     no shell `timeout`, no hand poll.
    - `ready`: say exactly "ready, not merging — a human merges", MR URL, pipeline id. Stop.
-   - success, not ready: quote `not_ready_reason` and the human step. Stop; a reason saying
-     `still checking` (mergeability not computed yet) resumes like `still_running`.
+   - success, not ready: quote `not_ready_reason`; `still checking` resumes as above.
    - `failed`: per job in `failed[]`: name, `web_url`, `fact`/`class`/`retry_safe`/`reason`,
-     `first_failure`, the redacted `root_cause` lines; `--note` posted the triage.
-   - `canceled|skipped|manual`: terminal, not ready; name the manual job to start.
-   - `superseded`: report the old outcome, switch to `head_pipeline_id`; never retry it.
-   - `errors[]`: a jobs listing failed; the snapshot is stale, not green.
-3. Retry once (`--retry`) only when every failed job is `transient` and `retry_safe`, the
-   pipeline is current and `retry_count` is 0. Exit 6: the guard refused; stop.
-4. Report: pipeline id, URL, verdict, triage, retries, next human step.
+     `first_failure`, redacted `root_cause` lines; `--note` posted the triage.
+   - `canceled|skipped|manual`: terminal, not ready; name the manual job.
+   - `superseded`: report it, switch to `head_pipeline_id`; never retry it.
+   - `errors[]`: a jobs listing failed; stale snapshot, not green.
+   - `warnings[]` (allowed failures): quote each `message`; never blocking.
+   - `default_branch`: say its `status`; not success: name `failed_jobs[]` (main is red
+     before this MR). `null` = unread.
+3. `--retry` once, only when every failed job is `transient` and `retry_safe`, the pipeline
+   is current and `retry_count` is 0. Exit 6: the guard refused; stop.
+4. Report: pipeline id, URL, verdict, warnings, default branch, triage.
 
 ## Guardrails
 
-- No merge, cancel or manual-job call. Quoted trace lines passed `redact`.
-- Session identity (`SILKOPS_CI_TOKEN` in CI), never the settings token. GitHub: a PR's runs
-  are `runs[]`, the first is the checkpoint (`docs/providers.md`).
+- No merge, cancel or manual-job call. Quoted trace lines passed `redact`. Session identity,
+  never the settings token. GitHub: `runs[]`, the first is the checkpoint (`docs/providers.md`).

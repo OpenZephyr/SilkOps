@@ -9,6 +9,10 @@
 # commit (with a watch.sh resume hint). --sibling <iid>: an older merged MR that touched the
 # same files; every non-trivial line it added is looked for on the default branch and the
 # missing ones are named (a conflict resolution that kept only one side, #41).
+# (#81) The MR's last head pipeline and the default-branch pipeline for the merge commit are
+# compared job by job: a job that passed on the MR but failed or was skipped on the default branch
+# is a `main_only_regressions[]` entry (name, mr_status, main_status, failure_reason), and
+# `main_pipeline {id, status}` names the run. Exit stays 0; the verdict line on stderr names them.
 # Exit: 0 ok · 2 usage · 5 not found · 7 MR not merged · 1 other.
 set -euo pipefail
 # shellcheck source=lib/prelude.sh
@@ -75,7 +79,46 @@ fi
 PIPE="$(p_run_for_ref_sha "$PROJECT" "$DEF" "$MSHA" 2>/dev/null | jq -c '.[0] | {id, status, web_url}' 2>/dev/null || echo null)"
 [ "$PIPE" != null ] && [ "$PIPE" != '{"id":null,"status":null,"web_url":null}' ] || PIPE=null
 HINT=null; [ "$PIPE" = null ] || HINT="watch.sh --project $PROJECT --pipeline $(printf '%s' "$PIPE" | jq -r '.id')"
+
+# --- (#81) jobs that passed on the MR but failed or were skipped on the default branch ------------
+# latest_jobs <pipeline id> — {name: status, failure_reason} per job name, newest job wins (retries);
+# every page of the listing, like watch.sh; '[]' when the listing fails.
+latest_jobs() {
+  local page=1 acc='[]' chunk n
+  while :; do
+    chunk="$(p_run_jobs "$PROJECT" "$1" 100 "$page" 2>/dev/null)" || { echo '[]'; return 0; }
+    n="$(printf '%s' "$chunk" | jq -r 'if type == "array" then length else -1 end' 2>/dev/null)" || n=-1
+    [ "$n" -ge 0 ] || { echo '[]'; return 0; }
+    acc="$(jq -cn --argjson a "$acc" --argjson b "$chunk" '$a + $b')"
+    if [ "$n" -lt 100 ] || [ "$page" -ge 50 ]; then break; fi
+    page=$((page + 1))
+  done
+  printf '%s' "$acc" | jq -c 'group_by(.name) | map(sort_by(.id) | .[-1] | {name, status, failure_reason: (.failure_reason // null), allow_failure: (.allow_failure // false)})'
+}
+MR_PIPE_ID="$(printf '%s' "$MRJ" | jq -r '.head_pipeline.id // ""')"
+HEAD_SHA="$(printf '%s' "$MRJ" | jq -r '.sha // ""')"
+if [ -z "$MR_PIPE_ID" ] && [ -n "$HEAD_SHA" ]; then   # hosts without head_pipeline (GitHub): the run for the MR's head sha
+  MR_PIPE_ID="$(p_run_for_ref_sha "$PROJECT" "$SRC" "$HEAD_SHA" 2>/dev/null | jq -r 'if type == "array" then (.[0].id // "") else "" end' 2>/dev/null || true)"
+fi
+MAIN_PIPE=null; REGRESSIONS='[]'
+if [ "$PIPE" != null ]; then
+  MAIN_PIPE="$(printf '%s' "$PIPE" | jq -c '{id, status}')"
+  if [ -n "$MR_PIPE_ID" ]; then
+    MRJOBS="$(latest_jobs "$MR_PIPE_ID")"; MAINJOBS="$(latest_jobs "$(printf '%s' "$PIPE" | jq -r .id)")"
+    REGRESSIONS="$(jq -cn --argjson m "$MRJOBS" --argjson d "$MAINJOBS" '
+      ($m | map({key: .name, value: .status}) | from_entries) as $mr
+      | [$d[] | select((.status == "failed" or .status == "skipped") and $mr[.name] == "success")
+         | {name, mr_status: "success", main_status: .status, failure_reason}]')"
+  fi
+fi
+if [ "$REGRESSIONS" != '[]' ]; then
+  err "VERDICT: $(printf '%s' "$REGRESSIONS" | jq -r 'length') job(s) passed on MR !$MR but not on $DEF (pipeline $(printf '%s' "$MAIN_PIPE" | jq -r .id)): $(printf '%s' "$REGRESSIONS" | jq -r 'map(.name + " " + .main_status) | join(", ")') — a rules: or needs: difference between the MR and the default branch"
+else
+  err "VERDICT: no main-only regression (MR pipeline ${MR_PIPE_ID:-unknown} vs $DEF pipeline $(printf '%s' "$MAIN_PIPE" | jq -r '.id // "unknown"'))"
+fi
 result "$(jq -cn --argjson iid "$MR" --arg d "$DEF" --arg s "$SRC" --arg sha "$MSHA" --argjson del "$(jq -cn --arg x "$DELETED" 'if $x == "null" then null else $x end')" \
   --argjson c "$CLOSES" --argjson o "$OPEN" --argjson sib "$SIBLING" --argjson p "$PIPE" --argjson h "$(jq -cn --arg x "$HINT" 'if $x == "null" then null else $x end')" \
+  --argjson mp "$MAIN_PIPE" --argjson mrp "$(jq -cn --arg x "$MR_PIPE_ID" 'if $x == "" then null else ($x | tonumber? // $x) end')" --argjson reg "$REGRESSIONS" \
   '{mr_iid: $iid, merged: true, default_branch: $d, source_branch: $s, merge_commit_sha: $sha, branch_deleted: $del,
-    closes_issues: $c, issues_still_open: $o, sibling: $sib, default_branch_pipeline: $p, resume_hint: $h}')"
+    closes_issues: $c, issues_still_open: $o, sibling: $sib, default_branch_pipeline: $p, resume_hint: $h,
+    mr_pipeline_id: $mrp, main_pipeline: $mp, main_only_regressions: $reg}')"

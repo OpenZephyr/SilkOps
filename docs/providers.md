@@ -9,6 +9,7 @@ where one exists, so nothing downstream breaks and nothing is renamed.
 |---|---|---|---|
 | change | merge request, `iid` | pull request, `iid` = `number` | pull request, `iid` = `index` |
 | CI unit | pipeline from `.gitlab-ci.yml`, one per commit | workflow run from `.github/workflows/*.yml`, one per workflow per commit: `runs[]` | Actions run from `.gitea/workflows/*.yml` |
+| default-branch state (`p_run_latest`) | newest pipeline of the default branch (`pipelines?ref=`), its failed jobs | newest workflow run of the branch (`actions/runs?branch=`), its failed jobs | newest Actions run of the branch |
 | job, job trace | pipeline job, `jobs/:id/trace` | run job, `actions/jobs/:id/logs` | run job, `actions/jobs/:id/logs` |
 | retry | retry one job | rerun the failed job of the run (`rerun: true`, same id, new attempt) | rerun |
 | ready to merge | `detailed_merge_status` + approvals | `mergeable_state` (clean → mergeable, behind → need_rebase, dirty → conflict, blocked → blocked_status, draft) + `reviewDecision` | `mergeable` + reviews |

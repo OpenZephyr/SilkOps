@@ -2,8 +2,21 @@
 # watch.sh — bounded-wait watch of an MR head pipeline or a pipeline id (plan U6, KTD6).
 #
 # Usage: watch.sh --project <group/project> (--mr <iid> [--pipeline <id>] | --pipeline <id>)
-#          [--wait <seconds, default 300>] [--interval <seconds, default 20>]
+#          [--wait <seconds>] [--interval <seconds, default 20>]
 #          [--retry] [--note] [--plan <basename>] [--run <id>]
+#
+# Expected duration (#79): the last successful pipeline of the watched ref; an MR ref
+# (`refs/…-requests/<iid>/head`) rarely has one, so the default branch's last success is the
+# fallback, and a repo may declare `watch.expected_duration_s` in `.silkops/facts.json` (any facts
+# layer) — used when there is no history, else as the floor. The report says `expected_duration_s`,
+# `expected_source` (ref|default_branch|facts|none) and `wait_s`. Without --wait the budget is the
+# expected duration plus WAIT_MARGIN_S, capped by SILKOPS_WAIT_CAP (default 540 s, under a ten
+# minute tool timeout); 300 s when nothing is known. An explicit --wait is never capped.
+# Allowed failures (#82): a job with allow_failure:true that failed is a `warnings[]` entry
+# (name, stage, failure_reason, web_url, message), never a failed[] entry and never a change to
+# status/ready. Default branch (#81): the latest default-branch pipeline is read once at the start
+# and reported as `default_branch {ref, pipeline_id, status, web_url, failed_jobs[]}` (null when
+# it cannot be read; the watch never fails for it).
 #
 # Resolves the MR's head pipeline (the checkpoint id) — or, with --mr AND --pipeline, watches
 # that pipeline id while reading superseded/detailed_merge_status from the MR (the resume
@@ -53,15 +66,16 @@ set -euo pipefail
 
 usage() { fail "$EX_USAGE" usage "usage: watch.sh --project <group/project> (--mr <iid> [--pipeline <id>] | --pipeline <id>) [--wait <s>] [--interval <s>] [--retry] [--note] [--plan <basename>] [--run <id>]${1:+ — $1}"; }
 
-PROJECT=""; MR=""; PIPE=""; WAIT=300; INTERVAL=20; RETRY=false; NOTE=false; SHA=""
+PROJECT=""; MR=""; PIPE=""; WAIT=300; WAIT_GIVEN=false; INTERVAL=20; RETRY=false; NOTE=false; SHA=""
 PLAN="-"; RUN="$(date -u +%Y%m%dT%H%M%SZ)"; ROOT_LINES=15
+WAIT_CAP="${SILKOPS_WAIT_CAP:-540}"; WAIT_MARGIN_S=60; WAIT_DEFAULT=300
 while [ $# -gt 0 ]; do
   case "$1" in
     --project) [ $# -ge 2 ] || usage "--project needs a value"; PROJECT="$2"; shift 2 ;;
     --project=*) PROJECT="${1#--project=}"; shift ;;
     --mr) [ $# -ge 2 ] || usage; MR="$2"; shift 2 ;;
     --pipeline) [ $# -ge 2 ] || usage; PIPE="$2"; shift 2 ;;
-    --wait) [ $# -ge 2 ] || usage; WAIT="$2"; shift 2 ;;
+    --wait) [ $# -ge 2 ] || usage; WAIT="$2"; WAIT_GIVEN=true; shift 2 ;;
     --sha) [ $# -ge 2 ] || usage; SHA="$2"; shift 2 ;;   # wait until the MR head pipeline is for this commit (right after a push)
     --interval) [ $# -ge 2 ] || usage; INTERVAL="$2"; shift 2 ;;
     --plan) [ $# -ge 2 ] || usage; PLAN="$2"; shift 2 ;;
@@ -85,6 +99,27 @@ require_ci_token   # top level, so the exit-3 JSON and message reach the real st
 OPS="$SILKOPS_ROOT/ops"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/silkops-watch.XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
 SLEEP_S="${SILKOPS_WATCH_SLEEP:-$INTERVAL}"
+[[ "$WAIT_CAP" =~ ^[0-9]+$ ]] || usage "SILKOPS_WAIT_CAP must be a number of seconds"
+
+# --- expected duration, the facts layer (#79) ------------------------------------------
+# facts_expected — the first `watch.expected_duration_s` number across the facts layers (repo
+# .silkops/facts.json first, then overlay, then core, which never declares one); empty when none.
+facts_expected() {
+  local f v
+  while IFS= read -r f; do
+    v="$(jq -r 'if (.watch.expected_duration_s // null | type) == "number" then (.watch.expected_duration_s | floor) else empty end' "$f" 2>/dev/null || true)"
+    if [ -n "$v" ]; then printf '%s' "$v"; return 0; fi
+  done < <(facts_paths)
+  return 0
+}
+FACTS_EXPECTED="$(facts_expected)"
+# default_wait <expected|null> — the budget when --wait was not given: expected + margin, capped;
+# the historical 300 s (capped too) when nothing is known.
+default_wait() {
+  jq -rn --argjson e "${1:-null}" --argjson m "$WAIT_MARGIN_S" --argjson cap "$WAIT_CAP" --argjson d "$WAIT_DEFAULT" \
+    '(if $e == null then $d else ($e + $m) end) as $w | [$w, $cap] | min | floor'
+}
+if [ "$WAIT_GIVEN" = false ]; then WAIT="$(default_wait "${FACTS_EXPECTED:-null}")"; fi
 
 # --- resolve the checkpoint --------------------------------------------------
 MRJ=null; DMS=null; HEAD_ID=null; MR_URL=null
@@ -159,7 +194,8 @@ JOBS_KNOWN=false    # a jobs listing has succeeded at least once
 JOBS_STALE=false    # this poll's listing failed; JOBS is the previous snapshot
 NO_MR_CONTEXT=false; MR_RESOLVE_TRIED=false
 JOBS_PER_PAGE=100; JOBS_MAX_PAGES=50
-CONTEXT_READ=false; EXPECTED=null; APPROVALS=null
+CONTEXT_READ=false; EXPECTED=null; EXPECTED_SRC=none; APPROVALS=null
+DEFAULT_BRANCH=null; WARNINGS='[]'
 
 append() {  # append <VAR> <json> — VAR is a JSON array
   local cur="${!1}"
@@ -209,7 +245,8 @@ report() {  # report <extra-json> — the single JSON result
     resume_after="$INTERVAL"   # (#73) green, but mergeability is not computed yet: the skill resumes
   fi
   result "$(jq -cn \
-    --argjson expected "$EXPECTED" --argjson resume_after "$resume_after" --argjson approvals "$APPROVALS" --argjson reason "$reason" --argjson runs "$RUNS" \
+    --argjson expected "$EXPECTED" --arg expected_src "$EXPECTED_SRC" --argjson resume_after "$resume_after" --argjson approvals "$APPROVALS" --argjson reason "$reason" --argjson runs "$RUNS" \
+    --argjson warnings "$WARNINGS" --argjson default_branch "$DEFAULT_BRANCH" \
     --arg project "$PROJECT" --argjson mr_iid "${MR:-null}" --argjson mr_url "$MR_URL" \
     --argjson pid "$PIPE_ID" --argjson pipe "$PIPE_JSON" --arg status "$STATUS" \
     --argjson terminal "$terminal" --argjson ready "$ready" --argjson dms "$DMS" \
@@ -227,7 +264,8 @@ report() {  # report <extra-json> — the single JSON result
      retried: $retried, retry_log: $retry_log, retry_skipped: $retry_skipped, retry_unsafe: $retry_unsafe,
      notes: $notes, errors: $errors, polls: $polls, waited_s: $waited, wait_s: $wait, interval_s: $interval,
      still_running: (($terminal | not)),
-     expected_duration_s: $expected, resume_after_s: $resume_after,
+     expected_duration_s: $expected, expected_source: $expected_src, resume_after_s: $resume_after,
+     warnings: $warnings, default_branch: $default_branch,
      approvals: $approvals, not_ready_reason: $reason, runs: $runs,
      resume_hint: $hint} + $extra')"
 }
@@ -395,21 +433,71 @@ post_note() {
   fi
 }
 
+# last_success_duration <ref> — the duration of the ref's last green pipeline, or null.
+last_success_duration() {
+  p_run_last_success "$PROJECT" "$1" 2>/dev/null | jq -c 'if type == "array" then (.[0].duration // null) else null end' 2>/dev/null || echo null
+}
+
+# read_context — once, on the first poll: expected duration (#31, #79), approvals (#38) and the
+# default branch's latest pipeline (#81). Every lookup here is informational: a failure leaves
+# null and the watch goes on.
+read_context() {
+  local ref def_br hist=null
+  ref="$(printf '%s' "$PIPE_JSON" | jq -r '.ref // ""')"
+  # the default branch: the MR's target when an MR is known, else the project's setting
+  def_br="$(printf '%s' "$MRJ" | jq -r '.target_branch // ""' 2>/dev/null || true)"
+  if [ -z "$def_br" ]; then
+    def_br="$(p_project_get "$PROJECT" 2>/dev/null | jq -r '.default_branch // ""' 2>/dev/null || true)"
+  fi
+  # (#31, #79) expected duration: the ref's own history, else the default branch's; a facts-declared
+  # value stands in when there is no history and is the floor when there is.
+  if [ -n "$ref" ]; then hist="$(last_success_duration "$ref")"; fi
+  if [ "$hist" != null ]; then
+    EXPECTED="$hist"; EXPECTED_SRC=ref
+  elif [ -n "$def_br" ] && [ "$def_br" != "$ref" ]; then
+    hist="$(last_success_duration "$def_br")"
+    if [ "$hist" != null ]; then EXPECTED="$hist"; EXPECTED_SRC=default_branch; fi
+  fi
+  if [ -n "$FACTS_EXPECTED" ] && jq -en --argjson e "$EXPECTED" --argjson f "$FACTS_EXPECTED" '$e == null or $f >= $e' >/dev/null; then
+    EXPECTED="$FACTS_EXPECTED"; EXPECTED_SRC=facts
+  fi
+  if [ "$WAIT_GIVEN" = false ]; then
+    WAIT="$(default_wait "$EXPECTED")"
+    err "wait budget defaults to ${WAIT}s (expected duration: ${EXPECTED}s from $EXPECTED_SRC, margin ${WAIT_MARGIN_S}s, cap ${WAIT_CAP}s)"
+  fi
+  # (#38) the review policy is part of the verdict: approvals outstanding block a merge too.
+  if [ -n "$MR" ]; then
+    APPROVALS="$(p_mr_approvals "$PROJECT" "$MR" 2>/dev/null | jq -c '{approved: (.approved // false), approvals_left: (.approvals_left // 0), approvals_required: (.approvals_required // 0)}' 2>/dev/null || echo null)"
+  fi
+  # (#81) the default branch's latest pipeline: one list call, plus its jobs only when it is not green.
+  if [ -n "$def_br" ]; then
+    local latest fj='[]' st
+    latest="$(p_run_latest "$PROJECT" "$def_br" 2>/dev/null | jq -c 'if type == "array" and length > 0 then .[0] else null end' 2>/dev/null || echo null)"
+    if [ "$latest" != null ]; then
+      st="$(printf '%s' "$latest" | jq -r '.status // "unknown"')"
+      if [ "$st" != success ]; then
+        fj="$(p_run_jobs "$PROJECT" "$(printf '%s' "$latest" | jq -r .id)" 100 1 2>/dev/null \
+          | jq -c 'if type == "array" then [.[] | select(.status == "failed") | {name, failure_reason: (.failure_reason // null), allow_failure: (.allow_failure // false)}] else [] end' 2>/dev/null || echo '[]')"
+        err "default branch $def_br: latest pipeline $(printf '%s' "$latest" | jq -r .id) is $st$( [ "$fj" != '[]' ] && printf ' · failed: %s' "$(printf '%s' "$fj" | jq -r 'map(.name) | join(", ")')")"
+      fi
+      DEFAULT_BRANCH="$(printf '%s' "$latest" | jq -c --arg r "$def_br" --argjson fj "$fj" '{ref: $r, pipeline_id: .id, status: (.status // null), web_url: (.web_url // null), failed_jobs: $fj}')"
+    fi
+  fi
+}
+
+# collect_warnings — (#82) failed jobs the pipeline allows to fail: reported, never a verdict.
+collect_warnings() {
+  WARNINGS="$(printf '%s' "$JOBS" | jq -c '[.[] | select(.allow_failure == true and .status == "failed")
+    | {name, stage, failure_reason, web_url, message: ("allowed to fail: " + .name + (if .failure_reason then " (" + .failure_reason + ")" else "" end))}]')"
+}
+
 # --- poll loop ----------------------------------------------------------------
 while :; do
   POLLS=$((POLLS + 1))
   PIPE_JSON="$(p_run_get "$PROJECT" "$PIPE_ID")" || fail "$EX_NOT_FOUND" not_found "pipeline $PIPE_ID not found in $PROJECT"
   if [ "$CONTEXT_READ" = false ]; then
     CONTEXT_READ=true
-    # (#31) how long this ref's last green pipeline took: the expected duration of this one.
-    ref="$(printf '%s' "$PIPE_JSON" | jq -r '.ref // ""')"
-    if [ -n "$ref" ]; then
-      EXPECTED="$(p_run_last_success "$PROJECT" "$ref" 2>/dev/null | jq -c '.[0].duration // null' 2>/dev/null || echo null)"
-    fi
-    # (#38) the review policy is part of the verdict: approvals outstanding block a merge too.
-    if [ -n "$MR" ]; then
-      APPROVALS="$(p_mr_approvals "$PROJECT" "$MR" 2>/dev/null | jq -c '{approved: (.approved // false), approvals_left: (.approvals_left // 0), approvals_required: (.approvals_required // 0)}' 2>/dev/null || echo null)"
-    fi
+    read_context
   fi
   STATUS="$(printf '%s' "$PIPE_JSON" | jq -r '.status // "unknown"')"
   if [ "$RETRY" = true ] && [ -z "$MR" ] && [ "$MR_RESOLVE_TRIED" != true ]; then
@@ -429,7 +517,9 @@ while :; do
   fi
   # Latest job per name; retry_count = same-named jobs minus one (KTD6: GitLab has no field).
   JOBS="$(printf '%s' "$RAW_JOBS" | jq -c 'group_by(.name) | map(sort_by(.id) | {name: .[-1].name, status: .[-1].status, id: .[-1].id,
-      failure_reason: (.[-1].failure_reason // null), stage: (.[-1].stage // null), retry_count: (length - 1), web_url: (.[-1].web_url // null)})')"
+      failure_reason: (.[-1].failure_reason // null), stage: (.[-1].stage // null), retry_count: (length - 1), web_url: (.[-1].web_url // null),
+      allow_failure: (.[-1].allow_failure // false)})')"
+  collect_warnings
   CUR="$(printf '%s' "$JOBS" | jq -c 'map({key: .name, value: .status}) | from_entries')"
   NEW="$(jq -cn --argjson p "$PREV" --argjson j "$JOBS" --argjson at "$ELAPSED" \
     '[$j[] | select(($p[.name] // null) != null and $p[.name] != .status) | {name, id, from: $p[.name], to: .status, at_s: $at}]')"
@@ -448,12 +538,14 @@ while :; do
       sleep "$SLEEP_S"; ELAPSED=$((ELAPSED + INTERVAL))
       continue
     fi
+    # (#82) allowed failures: one stderr line each; they never enter failed[] or the verdict
+    while IFS= read -r w; do [ -n "$w" ] && err "warning: $w"; done < <(printf '%s' "$WARNINGS" | jq -r '.[].message')
     if [ "$STATUS" = failed ]; then
       FAILED_ROUND='[]'; DID_RETRY=false
       while IFS= read -r job; do
         [ -n "$job" ] || continue
         triage_job "$job"
-      done < <(printf '%s' "$JOBS" | jq -c '.[] | select(.status == "failed")')
+      done < <(printf '%s' "$JOBS" | jq -c '.[] | select(.status == "failed" and (.allow_failure | not))')
       if [ "$RETRY" = true ] && [ "$JOBS_STALE" = true ]; then
         # never decide a retry on a stale snapshot (the budget count could be wrong)
         while IFS= read -r e; do

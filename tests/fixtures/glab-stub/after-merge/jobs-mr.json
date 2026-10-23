@@ -1,0 +1,1 @@
+[{"id":9500,"name":"lint","stage":"build","status":"success","failure_reason":null,"allow_failure":false},{"id":9501,"name":"build-image","stage":"build","status":"success","failure_reason":null,"allow_failure":false},{"id":9502,"name":"factory-tests","stage":"test","status":"success","failure_reason":null,"allow_failure":false}]

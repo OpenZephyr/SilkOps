@@ -411,5 +411,67 @@ if [ "$(rc_of w31c)" = 0 ] && out_of w31c | jq -e '.ready == false and .waited_s
   pass "W31c (#73) the re-read is bounded: three extra MR reads inside a large budget, then the resumable report"
 else fail "W31c" "rc=$(rc_of w31c) mr_reads=$(log_of w31c | grep -cE -- 'merge_requests/7 token=') out=$(out_of w31c | jq -c '{ready, waited_s, resume_after_s}' 2>/dev/null)"; fi
 
+# --- (#79) expected duration: the MR ref has no history, the default branch does; facts; the cap ---
+run_case w40 watch-expected-default -- "${COMMON[@]}" --mr 7
+if [ "$(rc_of w40)" = 0 ] && out_of w40 | jq -e '.ready == true and .expected_duration_s == 420 and .expected_source == "default_branch" and .wait_s == 480' >/dev/null \
+  && log_of w40 | grep -E -- 'pipelines\?ref=refs%2Fmerge-requests%2F7%2Fhead&status=success' >/dev/null \
+  && log_of w40 | grep -E -- 'pipelines\?ref=main&status=success' >/dev/null && err_of w40 | grep -- 'wait budget defaults to 480s' >/dev/null; then
+  pass "W40 (#79) no success on the MR ref -> the default branch's last success is the expected duration; --wait defaults to it plus the margin"
+else fail "W40" "rc=$(rc_of w40) out=$(out_of w40 | jq -c '{expected_duration_s, expected_source, wait_s}' 2>/dev/null) log=$(log_of w40 | tr '\n' ';')"; fi
+run_case w40b watch-expected-default SILKOPS_WAIT_CAP=200 -- "${COMMON[@]}" --mr 7
+if [ "$(rc_of w40b)" = 0 ] && out_of w40b | jq -e '.expected_duration_s == 420 and .wait_s == 200' >/dev/null; then
+  pass "W40b (#79) SILKOPS_WAIT_CAP caps the defaulted budget"
+else fail "W40b" "out=$(out_of w40b | jq -c '{expected_duration_s, wait_s}' 2>/dev/null)"; fi
+run_case w40c watch-expected-default SILKOPS_WAIT_CAP=200 -- "${COMMON[@]}" --mr 7 --wait 900
+if [ "$(rc_of w40c)" = 0 ] && out_of w40c | jq -e '.wait_s == 900' >/dev/null; then
+  pass "W40c (#79) an explicit --wait is never capped"
+else fail "W40c" "out=$(out_of w40c | jq -c '{wait_s}' 2>/dev/null)"; fi
+if out_of w8 | jq -e '.expected_source == "ref"' >/dev/null && out_of w1 | jq -e '.expected_duration_s == null and .expected_source == "none" and .wait_s == 60' >/dev/null; then
+  pass "W40d (#79) expected_source is ref when the ref has history, none when nothing is known"
+else fail "W40d" "w8=$(out_of w8 | jq -c '{expected_source}') w1=$(out_of w1 | jq -c '{expected_duration_s, expected_source, wait_s}')"; fi
+# a repo-declared watch.expected_duration_s (facts layer) stands in without history and is the floor with it
+mkdir -p "$SCRATCH/repo-facts/.silkops" "$SCRATCH/repo-facts-low/.silkops"
+echo '{"schema_version":"2","watch":{"expected_duration_s":900},"facts":[]}' >"$SCRATCH/repo-facts/.silkops/facts.json"
+echo '{"schema_version":"2","watch":{"expected_duration_s":100},"facts":[]}' >"$SCRATCH/repo-facts-low/.silkops/facts.json"
+( cd "$SCRATCH/repo-facts" && run_case w41 watch-green -- "${COMMON[@]}" --mr 7 )
+if [ "$(rc_of w41)" = 0 ] && out_of w41 | jq -e '.ready == true and .expected_duration_s == 900 and .expected_source == "facts" and .wait_s == 540' >/dev/null; then
+  pass "W41 (#79) .silkops/facts.json watch.expected_duration_s used without history; the default budget hits the 540 s cap"
+else fail "W41" "rc=$(rc_of w41) out=$(out_of w41 | jq -c '{expected_duration_s, expected_source, wait_s}' 2>/dev/null) err=$(err_of w41 | tail -2)"; fi
+( cd "$SCRATCH/repo-facts" && run_case w41b watch-running -- "${COMMON[@]}" --mr 7 --wait 0 )
+( cd "$SCRATCH/repo-facts-low" && run_case w41c watch-running -- "${COMMON[@]}" --mr 7 --wait 0 )
+if out_of w41b | jq -e '.expected_duration_s == 900 and .expected_source == "facts" and .resume_after_s == 900' >/dev/null \
+  && out_of w41c | jq -e '.expected_duration_s == 540 and .expected_source == "ref"' >/dev/null; then
+  pass "W41b (#79) the facts value is a floor: 900 beats the ref's 540, 100 does not; resume_after_s follows"
+else fail "W41b" "high=$(out_of w41b | jq -c '{expected_duration_s, expected_source, resume_after_s}' 2>/dev/null) low=$(out_of w41c | jq -c '{expected_duration_s, expected_source}' 2>/dev/null)"; fi
+
+# --- (#82) allowed failures are warnings, never the verdict ---------------------------------------
+run_case w42 watch-green-warnings -- "${COMMON[@]}" --mr 7 --wait 0
+if [ "$(rc_of w42)" = 0 ] && out_of w42 | jq -e '.status == "success" and .ready == true and .failed == [] and .triage == [] and (.warnings | length) == 2
+      and .warnings[0].name == "secret_detection" and .warnings[0].failure_reason == "ci_quota_exceeded" and .warnings[0].stage == "test"
+      and (.warnings[0].web_url | endswith("/jobs/9004")) and .warnings[0].message == "allowed to fail: secret_detection (ci_quota_exceeded)"
+      and .warnings[1].name == "semgrep-sast" and (.jobs | length) == 5' >/dev/null \
+  && err_of w42 | grep -F -- 'warning: allowed to fail: secret_detection (ci_quota_exceeded)' >/dev/null && [ "$(writes_of w42)" = 0 ]; then
+  pass "W42 (#82) two failed allow_failure jobs -> ready:true, warnings[] has both with a message each and a stderr line each, failed[] empty"
+else fail "W42" "rc=$(rc_of w42) out=$(out_of w42 | jq -c '{status, ready, failed, warnings}' 2>/dev/null) err=$(err_of w42 | tail -3)"; fi
+if out_of w1 | jq -e '.warnings == []' >/dev/null && out_of w4b | jq -e '.warnings == []' >/dev/null; then
+  pass "W42b (#82) pipelines without allowed failures report warnings: []"
+else fail "W42b" "w1=$(out_of w1 | jq -c .warnings) w4b=$(out_of w4b | jq -c .warnings)"; fi
+
+# --- (#81) the default branch's latest pipeline is read once and reported ------------------------
+if out_of w40 | jq -e '.default_branch.ref == "main" and .default_branch.pipeline_id == 499 and .default_branch.status == "success" and .default_branch.failed_jobs == []' >/dev/null \
+  && [ "$(log_of w40 | grep -cE -- 'pipelines\?ref=main&per_page=1')" = 1 ] && ! log_of w40 | grep -E -- 'pipelines/499' >/dev/null; then
+  pass "W43 (#81) MR mode: default_branch names main's latest pipeline, one list call, no jobs call when it is green"
+else fail "W43" "out=$(out_of w40 | jq -c .default_branch 2>/dev/null) log=$(log_of w40 | tr '\n' ';')"; fi
+run_case w43b watch-main-red -- "${COMMON[@]}" --pipeline 501 --wait 0
+if [ "$(rc_of w43b)" = 0 ] && out_of w43b | jq -e '.ready == true and .default_branch.pipeline_id == 777 and .default_branch.status == "failed"
+      and (.default_branch.failed_jobs | length) == 1 and .default_branch.failed_jobs[0].name == "build-image" and .default_branch.failed_jobs[0].failure_reason == "script_failure"' >/dev/null \
+  && err_of w43b | grep -E -- 'default branch main: latest pipeline 777 is failed .* build-image' >/dev/null \
+  && log_of w43b | grep -E -- 'projects/void-realm-solutions%2Fsilkops-harness-eval token=' >/dev/null; then
+  pass "W43b (#81) pipeline mode: the default branch comes from the project; a red main reports its failed jobs and a stderr line, the watch verdict is untouched"
+else fail "W43b" "rc=$(rc_of w43b) out=$(out_of w43b | jq -c '{ready, default_branch}' 2>/dev/null) err=$(err_of w43b | tail -3) log=$(log_of w43b | tr '\n' ';')"; fi
+if out_of w1 | jq -e '.default_branch == null and .ready == true' >/dev/null; then
+  pass "W43c (#81) an unreadable default-branch pipeline is null and never fails the watch"
+else fail "W43c" "out=$(out_of w1 | jq -c '{ready, default_branch}')"; fi
+
 echo "test-watch: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]
