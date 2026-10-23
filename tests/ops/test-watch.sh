@@ -159,6 +159,21 @@ if [ "$(rc_of w5)" = 6 ] && out_of w5 | jq -e '.ok == false and .error == "retry
   pass "W5 (AE7) 502 after the build-image: pushing marker with --retry -> no retry POST, exit 6, reason names the guard, full report"
 else fail "W5" "rc=$(rc_of w5) out=$(out_of w5) log=$(log_of w5 | tr '\n' ';')"; fi
 
+# --- #80 #83: a quota-killed job has an EMPTY trace; the host's failure_reason names it ---
+# The classifier gets --failure-reason and --job-name; the core ci_quota_exceeded fact matches
+# on failure_reason alone (permanent, not retry-safe), so --retry skips it as not transient.
+run_case w5q watch-failed-quota -- "${COMMON[@]}" --mr 7 --retry --wait 0
+if [ "$(rc_of w5q)" = 0 ] && out_of w5q | jq -e '.ok == true and .status == "failed" and .terminal == true and .ready == false
+      and .failed[0].name == "semgrep-sast" and .failed[0].failure_reason == "ci_quota_exceeded" and .failed[0].root_cause == []
+      and .failed[0].classification.fact == "ci_quota_exceeded" and .failed[0].classification.matched_on == "failure_reason"
+      and .failed[0].classification.class == "permanent" and .failed[0].classification.transient == false
+      and .failed[0].classification.retry_safe == false and .failed[0].classification.hit_count == 0
+      and (.failed[0].classification.reason | contains("compute quota"))
+      and .retried == [] and (.retry_skipped[0].reason | contains("not transient"))' >/dev/null \
+  && [ "$(retries_of w5q)" = 0 ] && [ "$(merge_calls w5q)" = 0 ]; then
+  pass "W5q (#80 #83) empty trace + failure_reason ci_quota_exceeded -> triage names ci_quota_exceeded on failure_reason, permanent, not retry-safe, no retry POST"
+else fail "W5q" "rc=$(rc_of w5q) out=$(out_of w5q) log=$(log_of w5q | tr '\n' ';')"; fi
+
 # --- superseded pipeline: never retried ---------------------------------------------
 # The head pipeline moves from 501 to 502 between the resolving MR read and the refresh.
 run_case w6 watch-failed-transient:watch-superseded GLAB_STUB_PHASE_MATCH='GET */merge_requests/7' -- "${COMMON[@]}" --mr 7 --retry --wait 0

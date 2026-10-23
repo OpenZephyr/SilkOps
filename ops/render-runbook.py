@@ -25,7 +25,16 @@ def render_facts(facts):
         out.append("")
         out.append(f["explanation"].strip())
         out.append("")
-        out.append("Signature: `%s`" % f["pattern"])
+        # schema 2: a fact signs with `pattern` (trace) and/or `failure_reason` (the host's
+        # job failure_reason), may be scoped to `jobs`, and may be `retired` (kept for history)
+        if f.get("failure_reason"):
+            out.append("Failure reason: `%s`" % f["failure_reason"])
+        if f.get("pattern"):
+            out.append("Signature: `%s`" % f["pattern"])
+        if f.get("jobs"):
+            out.append("Jobs: `%s`" % f["jobs"])
+        if f.get("retired"):
+            out.append("Retired: no longer matched by the classifier.")
         out.append("")
     out.append(MARK_END)
     return "\n".join(out)

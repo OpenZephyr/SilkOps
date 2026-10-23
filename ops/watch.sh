@@ -289,8 +289,12 @@ triage_job() {
     fi
     local fa=(); local fp
     while IFS= read -r fp; do fa+=(--facts "$fp"); done < <(facts_paths)
-    cl="$(python3 "$OPS/classify-failure.py" "$tf" "${fa[@]}" 2>/dev/null | redact \
-      | jq -c '{transient, retry_safe, fact, class, reason, step, no_retry_after, marker_hit_before_failure, marker_line_no, failure_line_no, hit_count: (.hits | length), facts_files: [.facts_file | split(",")[] | split("/") | last]}')" \
+    # the host's failure_reason (ci_quota_exceeded, runner_system_failure, …) and the job name
+    # let a fact match before the trace (an empty trace, a quota-killed job) or scope itself to
+    # particular jobs (facts schema 2, #80 #83)
+    local frs; frs="$(printf '%s' "$job" | jq -r '.failure_reason // ""')"
+    cl="$(python3 "$OPS/classify-failure.py" "$tf" "${fa[@]}" --failure-reason "$frs" --job-name "$name" 2>/dev/null | redact \
+      | jq -c '{transient, retry_safe, fact, matched_on, class, reason, step, no_retry_after, marker_hit_before_failure, marker_line_no, failure_line_no, hit_count: (.hits | length), facts_files: [.facts_file | split(",")[] | split("/") | last]}')" \
       || cl='{"transient":false,"retry_safe":false,"fact":null,"class":"unknown","reason":"classify-failure.py failed on the trace"}'
   else
     err "trace of job $id ($name) could not be fetched: $(redact <"$TMP/trace-$id.err" | tr '\n' ' ')"
