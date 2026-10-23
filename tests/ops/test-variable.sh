@@ -101,5 +101,16 @@ if [ "$(rc_of v14)" = 0 ] && out_of v14 | jq -e '.dry_run == true and .action ==
   pass "V14 dry-run on an existing variable reports current vs proposed flags, nothing written"
 else fail "V14" "rc=$(rc_of v14) out=$(out_of v14)"; fi
 
+# V15 (#76): a Developer identity gets 403 on the listing -> exit 4 insufficient_role naming the role, not "not found"
+run_case v15 variable-developer -- --project "$PROJECT" list
+if [ "$(rc_of v15)" = 4 ] && out_of v15 | jq -e '.ok == false and .error == "insufficient_role" and .needed_role == "Maintainer" and (.message | test("Maintainer"))' >/dev/null \
+  && ! leaked v15 'glpat-stubsecret' >/dev/null; then
+  pass "V15 (#76) list answered 403 -> exit 4 insufficient_role, Maintainer named, token redacted"
+else fail "V15" "rc=$(rc_of v15) out=$(out_of v15) err=$(err_of v15 | tail -1)"; fi
+run_case v15b variable-gone -- --project "$PROJECT" list
+if [ "$(rc_of v15b)" = 5 ] && out_of v15b | jq -e '.ok == false and .error == "not_found"' >/dev/null && ! leaked v15b 'glpat-stubsecret' >/dev/null; then
+  pass "V15b list answered 404 -> exit 5 not_found stays"
+else fail "V15b" "rc=$(rc_of v15b) out=$(out_of v15b)"; fi
+
 echo "test-variable: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

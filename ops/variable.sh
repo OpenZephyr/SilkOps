@@ -16,7 +16,8 @@
 # write (>= 8 chars, single line, charset [A-Za-z0-9+/=@:.~-]) and the violated constraint
 # is named. The body travels to glab as `--input <file>` (never a -f field). Create or
 # update (PUT when the key exists). Writes via api_settings.
-# Exit: 0 ok · 2 usage/constraint · 3 token missing · 7 unmask/unprotect refused · 1 other.
+# Exit: 0 ok · 2 usage/constraint · 3 token missing · 4 list answered 403 (Maintainer needed) ·
+# 5 list answered anything else · 7 unmask/unprotect refused · 1 other.
 set -euo pipefail
 # shellcheck source=lib/prelude.sh
 . "$(dirname "$0")/lib/prelude.sh"
@@ -87,7 +88,16 @@ if type p_has_secrets >/dev/null 2>&1; then
 fi
 
 if [ "$CMD" = list ]; then
-  V="$(api_get "projects/$ENC/variables?per_page=100" 2>/dev/null)" || fail "$EX_NOT_FOUND" not_found "could not list variables of $PROJECT (Maintainer needed)"
+  LERR="$(mktemp "${TMPDIR:-/tmp}/silkops-variable-list.XXXXXX")"; trap 'rm -f "$LERR"' EXIT
+  if ! V="$(api_get "projects/$ENC/variables?per_page=100" 2>"$LERR")"; then
+    MSG="$(redact <"$LERR" | tr '\n' ' ' | sed -E 's/[[:space:]]+$//')"
+    # (#76) a 403 is the identity's role, not a missing project: exit 4 like token-check, naming the role
+    if printf '%s' "$MSG" | grep -E '(^|[^0-9])403([^0-9]|$)' >/dev/null; then
+      fail "$EX_ROLE" insufficient_role "needs Maintainer on $PROJECT to list CI/CD variables (the listing answered 403)" \
+        "$(jq -cn --arg p "$PROJECT" '{project: $p, needed_role: "Maintainer"}')"
+    fi
+    fail "$EX_NOT_FOUND" not_found "could not list variables of $PROJECT: ${MSG:-no response}"
+  fi
   result "$(printf '%s' "$V" | jq -c --arg p "$PROJECT" '{project: $p, variables: map(del(.value))}')"
   exit 0
 fi
