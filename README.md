@@ -54,6 +54,7 @@ exit codes (`AGENTS.md`). The provider is read off the origin remote or `SILKOPS
 | `after-merge` | sync and prune after a human merged, confirm linked issues, watch main |
 | `milestone-from-plan` | one call turns a plan's units into a milestone with linked issues |
 | `file-residuals` | review findings as issues, deduplicated by finding |
+| `verify-handoff` | untested surfaces as a verify milestone, operator-assigned issues, a testing table |
 | `trace-timing` | where the time goes in a job, ranked with numbers |
 | `registry-ops` | zero-copy retag, digest compare, tag listing |
 | `consumer-onboarding` | connect a project to an image factory, one confirmation per settings write |
