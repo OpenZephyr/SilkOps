@@ -30,5 +30,7 @@ is the marker, then the `u<N>` label, never the title. Closed issues are never e
 - A plan with `## M<n> · <title>` headings and `### M<n>-<nn>` units yields one milestone per
   heading (`milestones[]`, `milestone` null); never pass `--milestone` to it.
 - Hosts: GitHub milestones are by number; it has no blocking links, so edges come back as `fallback: managed_region`.
+- `{{link:<path>:<a>-<b>}}` in a body becomes a permalink pinned at HEAD (`--sha` pins another);
+  `silkops link --project P --path <p> --line a-b` makes one by hand.
 - Every object carries the marker (`scripts/audit-milestone.sh` checks it).
 - No raw `glab api` calls here; a missing operation belongs in `ops/`, not in this skill.
