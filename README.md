@@ -1,9 +1,8 @@
 # SilkOps
 
-A dev-loop harness for coding agents on GitLab, GitHub and Gitea. Skills compose small
-operations scripts over the host's CLI, so a session commits, ships a branch, watches its
-pipeline, triages a failure against recorded facts, and files issues from a plan, with no
-hand-written API glue. It never merges. A human does.
+Skills that let a coding agent commit, ship a branch, watch its pipeline, explain a failure and
+file issues from a plan, on GitLab, GitHub or Gitea, with no hand-written API glue. It never
+merges. A human does.
 
 ![one loop, ending at a human](docs/diagrams/ship-watch-loop.excalidraw.svg)
 
@@ -20,81 +19,55 @@ then once, in a terminal, so the skills find the `silkops` command:
 bash ~/.claude/plugins/cache/silkops/silkops/*/bin/silkops install-agent claude-code
 ```
 
-**Codex, Cursor, OpenCode, Gemini CLI** (any agent that reads SKILL.md)
+**Codex, Cursor, OpenCode, Gemini CLI**
 
 ```
 git clone https://github.com/OpenZephyr/SilkOps.git ~/.silkops
-~/.silkops/bin/silkops install-agent all      # or one: codex | cursor | opencode | gemini-cli | claude-code
+~/.silkops/bin/silkops install-agent all
 ```
 
-That links the nine skills where the agent looks, puts `silkops` in `~/.local/bin`, and writes the
-conventions import the agent reads. Then `silkops doctor` shows what the machine has. Per-agent
-notes: `adapters/<name>/README.md`. Requirements: `jq`, `curl`, Python 3.9, and the host CLI
-(`glab` for GitLab, `gh` for GitHub, a `GITEA_TOKEN` for Gitea). Tokens come from the environment
-only, never argv or a URL.
+Needs `jq`, `curl`, Python 3.9 and the host CLI: `glab` for GitLab, `gh` for GitHub, a
+`GITEA_TOKEN` for Gitea. Tokens are read from the environment only.
 
-## One command, one JSON result
+## Try it
 
 ```
-silkops watch --project group/project --mr 42 --wait 300
-{"ok":true,"provider":"gitlab","status":"success","ready":true,"detailed_merge_status":"mergeable", …}
+silkops doctor
+silkops watch --project group/project --mr 42
+{"ok":true,"provider":"gitlab","status":"success","ready":true, …}
 ```
 
-Every verb is one script under `ops/`: one JSON object on stdout, human text on stderr, fixed
-exit codes (`AGENTS.md`). The provider is read off the origin remote or `SILKOPS_PROVIDER`.
-`SILKOPS_MARKER=off` makes every write anonymous for repos that must not name the tool.
+Every verb prints one JSON object and a fixed exit code, so an agent can act on it without
+guessing. In a repo, say "adopt silkops" and the agent sets the conventions block and ships the
+first merge request.
 
 ## Skills
 
 | skill | does |
 |---|---|
-| `commit` | commit named paths in the repo's own message style, no trailers unless asked |
-| `ship-mr` | push the branch, open or re-sync its MR from the plan, hand off to the watch |
-| `watch-pipeline` | bounded watch, fact-based triage, one safe retry, a ready verdict, never merges |
-| `after-merge` | sync and prune after a human merged, confirm linked issues, watch main |
-| `milestone-from-plan` | one call turns a plan's units into a milestone with linked issues |
+| `adopt` | connect a repo: check the token, add the conventions block, ship the first MR |
+| `commit` | commit named paths in the repo's own message style |
+| `ship-mr` | push the branch, open or update its MR, hand off to the watch |
+| `watch-pipeline` | bounded watch, fact-based triage, one safe retry, a ready verdict |
+| `after-merge` | after a human merged: prune, confirm linked issues, watch the default branch |
+| `verify-handoff` | file one issue per surface a session could not test, plus a status doc |
+| `milestone-from-plan` | a plan's units become a milestone with linked issues |
 | `file-residuals` | review findings as issues, deduplicated by finding |
-| `verify-handoff` | untested surfaces as a verify milestone, operator-assigned issues, a testing table |
 | `trace-timing` | where the time goes in a job, ranked with numbers |
 | `registry-ops` | zero-copy retag, digest compare, tag listing |
 | `consumer-onboarding` | connect a project to an image factory, one confirmation per settings write |
 
-## Hosts
+## Scope
 
-| | GitLab | GitHub | Gitea |
-|---|---|---|---|
-| change | merge request | pull request | pull request |
-| CI unit | pipeline | workflow runs, `runs[]` per commit | Actions run |
-| status | verified live | fixture-verified, live check open | fixture-verified, flagged `experimental` |
+Never merges, never pushes a protected branch, never edits a closed issue. Tokens never enter
+argv, URLs or output. `SILKOPS_MARKER=off` makes every write anonymous. Pipelines and workflow
+runs are in scope; cluster CronJobs and anything behind `kubectl` are not.
 
-What every concept means on every host, and each fallback by name: `docs/providers.md`.
+## More
 
-## Facts
-
-A failure signature is a fact: a regex, an explanation, a retry verdict. Three layers, most
-specific first: the repo's `.silkops/facts.json`, the plugin overlay, then `facts/environment.json`.
-Core ships generic GitLab, Docker and runner facts only; a project's own signatures travel with it.
-
-![three fact layers](docs/diagrams/fact-layers.excalidraw.svg)
-
-## Diagrams
-
-Excalidraw scenes under `docs/diagrams/`. The `.excalidraw` file is the source and the
-`.excalidraw.svg` beside it embeds the scene, so both are editable: open either in the Excalidraw
-PWA, `docker run -p 5000:80 excalidraw/excalidraw`, or the VS Code extension, and export as SVG
-with "Embed scene".
-
-![skills over ops over glab](docs/diagrams/architecture.excalidraw.svg)
-
-![scripts speak verbs; a provider speaks its host](docs/diagrams/providers.excalidraw.svg)
-
-## Develop
-
-- `bash tests/run.sh`: tier 1, offline and fixture-driven, gates every change.
-- `AGENTS.md` holds the conventions; `.claude/CLAUDE.md` and `GEMINI.md` only import it.
-- Source of truth is GitLab; GitHub (`OpenZephyr/SilkOps`) is a main-only mirror, and
-  `silkops inbox --repo OpenZephyr/SilkOps` lists what people file there.
-- Release: tag `silkops-harness--vX.Y.Z` on main (CI publishes the asset to GitLab), then
-  `scripts/github-release.sh --repo OpenZephyr/SilkOps --tag <tag>` creates the GitHub Release.
+- Hosts, and what each concept means on each: `docs/providers.md`
+- Failure facts and their three layers: `docs/facts.md`
+- Tests, mirror and release: `CONTRIBUTING.md`
+- Diagrams: `docs/diagrams/README.md`
 
 MIT. Issues and pull requests are welcome on GitHub.
