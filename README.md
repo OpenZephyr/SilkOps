@@ -52,6 +52,7 @@ first merge request.
 | `after-merge` | after a human merged: prune, confirm linked issues, watch the default branch |
 | `verify-handoff` | file one issue per surface a session could not test, plus a status doc |
 | `milestone-from-plan` | a plan's units become a milestone with linked issues |
+| `verify-findings` | sub-agents try to refute each review finding at a pinned sha; only what survives is filed |
 | `file-residuals` | review findings as issues, deduplicated by finding |
 | `trace-timing` | where the time goes in a job, ranked with numbers |
 | `registry-ops` | zero-copy retag, digest compare, tag listing |

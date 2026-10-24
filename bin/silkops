@@ -19,10 +19,11 @@ verb_script() {
     inbox) echo ops/inbox.sh ;;                conventions) echo ops/conventions.sh ;;
     classify) echo ops/classify-failure.py ;;  trace) echo ops/trace.py ;;
     plan-units) echo ops/plan-units.py ;;      render-runbook) echo ops/render-runbook.py ;;
+    verify-merge) echo ops/verify-merge.py ;;
     *) return 1 ;;
   esac
 }
-VERBS="watch mr-upsert issue-upsert issue-link issue-edit link milestone-upsert milestone-sync note commit after-merge token-check registry schedule variable allowlist inbox conventions classify trace plan-units render-runbook redact doctor install-agent"
+VERBS="watch mr-upsert issue-upsert issue-link issue-edit link milestone-upsert milestone-sync note commit after-merge token-check registry schedule variable allowlist inbox conventions classify trace plan-units render-runbook verify-merge redact doctor install-agent"
 
 usage() {
   echo "usage: silkops <verb> [args…]   verbs: $VERBS" >&2
