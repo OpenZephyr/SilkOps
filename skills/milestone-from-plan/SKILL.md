@@ -16,6 +16,8 @@ is the marker, then the `u<N>` label, never the title. Closed issues are never e
    role needed); mention only `operator.username` when `operator.exists` is true.
 1. `silkops milestone-sync --project P --plan <path> --run <id> [--milestone <title>] --dry-run`:
    read milestone action, unit → iid → action, links. Then the same call without `--dry-run`.
+   The dry run shows the exact text (`proposed`; `--show` prints it); read it before filing on
+   someone else's repo.
    The script parses the units, upserts the milestone (title from the plan's `title:`) and every
    issue, links every `depends_on` edge as `blocks`. Never loop over units in the session.
 2. `fallback: relates_to` on a link means the project has no blocking links; say so. Exit 7
