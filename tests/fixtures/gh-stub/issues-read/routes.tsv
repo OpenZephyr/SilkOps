@@ -1,0 +1,7 @@
+# a contributor without push access (#86): read role, nothing filed yet
+GET	repos/*/collaborators/*/permission	../common/permission-read.json
+GET	search/issues*	../common/search-empty.json
+GET	repos/*/issues?labels=*	../common/empty.json
+POST	repos/*/issues	../common/issue-created-nolabel.json	201
+GET	repos/example/silkops-harness	../common/repo.json
+GET	user	../common/user.json

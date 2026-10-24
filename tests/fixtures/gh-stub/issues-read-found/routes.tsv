@@ -1,0 +1,7 @@
+# the rerun of issues-read (#86): the footer-identified issue #14 exists, no label on it
+GET	repos/*/collaborators/*/permission	../common/permission-read.json
+GET	search/issues*	../common/search-footer.json
+GET	repos/*/issues?labels=*	../common/empty.json
+PATCH	repos/*/issues/14	../common/issue-14-updated.json
+GET	repos/example/silkops-harness	../common/repo.json
+GET	user	../common/user.json
