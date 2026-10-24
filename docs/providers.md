@@ -16,6 +16,8 @@ where one exists, so nothing downstream breaks and nothing is renamed.
 | triage note | MR note | PR issue comment | PR comment |
 | plan container | milestone | milestone (repo milestones by number; Projects v2 is GraphQL-only and out of scope) | milestone |
 | dependency link | issue link `blocks` (`relates_to` when the tier refuses) | none in REST: `fallback: managed_region` and a `Blocked by #n` line | issue dependencies API |
+| issue identity without push access | unit label (`issue-upsert`, markers off) | labels are refused or dropped: none sent, `labels_applied: false`; identity is the marker, or with markers off a `silkops-id: <plan>/<unit>` footer found by body search (`identity: body_footer`) | labels by id, created as needed |
+| close an issue (`issue-close`) | `PUT` with `state_event: close` | `PATCH` with `state: closed` | `PATCH` with `state: closed` |
 | schedule | pipeline schedule (settings API) | `on: schedule` in a workflow file written by `schedule.sh create` (`action: file_written`): a change to ship, never a settings write | same as github, under `.gitea/workflows` |
 | CI variable / secret | project variable, masked and protected | masked → Actions secret (`gh secret set`, value on stdin), plain → Actions variable; `protected` is `not_applicable` | Actions variable / secret API |
 | registry | GitLab registry v2 (tags and digests via the GitLab API) | GHCR v2: `ghcr.io/<owner>/<image>`, token exchange with `GH_TOKEN` | Gitea registry v2 |

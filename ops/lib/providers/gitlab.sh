@@ -54,6 +54,8 @@ p_issue_list_by_label()      { api_get "projects/$(_enc "$1")/issues?labels=$(_e
 p_issue_get()        { api_get "projects/$(_enc "$1")/issues/$2"; }
 p_issue_create()     { glab_ro api -X POST "projects/$(_enc "$1")/issues" --input "$2"; }
 p_issue_update()     { glab_ro api -X PUT "projects/$(_enc "$1")/issues/$2" --input "$3"; }
+# p_issue_close <P> <iid> — state_event close by file, so the write shape matches the others (#87)
+p_issue_close()      { local b rc=0; b="$(mktemp)"; printf '{"state_event":"close"}\n' >"$b"; glab_ro api -X PUT "projects/$(_enc "$1")/issues/$2" --input "$b" || rc=$?; rm -f "$b"; return "$rc"; }
 p_has_issue_links()  { return 0; }
 p_issue_links()      { api_get "projects/$(_enc "$1")/issues/$2/links"; }
 # p_issue_link_post <P> <source iid> <target project id> <target iid> <type>
