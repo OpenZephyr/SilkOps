@@ -1,0 +1,7 @@
+GET	repos/*/milestones*	../common/milestones.json
+GET	search/issues*	../common/search-empty.json
+GET	repos/*/issues?labels=*	../common/empty.json
+GET	users/aqua	../common/user.json
+GET	repos/example/silkops-harness	../common/repo.json
+GET	user	../common/user.json
+POST	repos/*/issues	refused.json	403
