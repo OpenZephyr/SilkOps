@@ -22,6 +22,8 @@ manifests() {
   printf '{\n  "name": "silkops",\n  "plugins": [\n    {\n      "name": "silkops",\n      "source": "./",\n      "version": "%s"\n    }\n  ]\n}\n' "$1" >"$G/.claude-plugin/marketplace.json"
 }
 g init -q -b main >/dev/null
+# bump.sh commits with the repo's own identity; CI has no global one, so the scratch repo gets one (R4).
+g config user.name t; g config user.email t@t
 manifests 0.1.0; g add -A; g commit -qm "release: 0.1.0"; g tag silkops-harness--v0.1.0
 echo a >"$G/a"; g add -A; g commit -qm "feat(a): the first thing" -m "Closes #9"
 manifests 0.2.0; g add -A; g commit -qm "release: 0.2.0"; g tag silkops-harness--v0.2.0
