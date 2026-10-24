@@ -57,5 +57,21 @@ if [ "$(rc_of s5)" = 0 ] && out_of s5 | jq -e '.dry_run == true and .milestone.a
   pass "S5 (#68) fresh plan dry run: milestone reported as proposed, issues planned without it, zero writes"
 else fail "S5" "rc=$(rc_of s5) out=$(out_of s5 | head -c 500) writes=$(writes_of s5)"; fi
 
+# S6 (#78): a multi-milestone plan (## M1, ## M2) plans two milestones, files each unit under its own,
+# keeps the cross-milestone edge (M1-02 -> M2-01); nothing written in a dry run
+MPLAN="$ROOT/tests/fixtures/plans/milestones-two.md"
+run_case s6 sync-fresh SILKOPS_FACTS_OVERLAY="$SCRATCH/no-overlay" -- --project "$PROJECT" --plan "$MPLAN" --run r9 --dry-run
+if [ "$(rc_of s6)" = 0 ] && out_of s6 | jq -e '.dry_run == true and .milestone == null and (.milestones | length) == 2
+      and (.milestones | map(.title)) == ["Foundations", "Delivery"] and (.milestones | all(.action == "created" and .proposed == true))
+      and (.issues | length) == 5 and .issues[0].unit == "M1-01" and .issues[0].milestone == "Foundations" and .issues[3].unit == "M2-01" and .issues[3].milestone == "Delivery"
+      and ([.links[] | select(.source_unit == "M1-02" and .target_unit == "M2-01")] | length) == 1' >/dev/null \
+  && [ "$(writes_of s6)" = 0 ] && [ "$(log_of s6 | grep -cE -- 'milestones\?search=')" = 2 ]; then
+  pass "S6 (#78) milestones plan dry run: two milestones planned (Foundations, Delivery), five units under their own, M1-02 -> M2-01 kept, zero writes"
+else fail "S6" "rc=$(rc_of s6) out=$(out_of s6 | head -c 900) writes=$(writes_of s6) log=$(log_of s6 | grep milestones | tr '\n' ';')"; fi
+
+# S6b: --milestone on a plan that declares its own milestones is a usage error
+run_case s6b sync-fresh -- --project "$PROJECT" --plan "$MPLAN" --run r9 --milestone "One" --dry-run
+if [ "$(rc_of s6b)" = 2 ] && [ "$(calls_of s6b)" = 0 ]; then pass "S6b --milestone with a multi-milestone plan -> exit 2"; else fail "S6b" "rc=$(rc_of s6b)"; fi
+
 echo "test-milestone-sync: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

@@ -191,5 +191,83 @@ title: t
                          ["apps/gitlab-runner/steam/helmrelease.yaml", "apps/gitlab-runner/steam/values.yaml", "ops/one.sh"])
 
 
+MILESTONES = os.path.join(CICD_PLANS, "milestones-two.md")
+
+
+class MilestonesProfile(unittest.TestCase):
+    """#78: `## M<n> · <title>` milestones with `### M<n>-<nn>` units, auto-detected."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.rc, cls.out, cls.err = run("plan-units.py", MILESTONES)
+
+    def test_detected_and_grouped(self):
+        self.assertEqual(self.rc, 0, self.err)
+        self.assertEqual(self.out["profile"], "milestones")
+        self.assertEqual(self.out["count"], 5)
+        self.assertEqual([(m["id"], m["title"], m["units"]) for m in self.out["milestones"]],
+                         [("M1", "Foundations", ["M1-01", "M1-02", "M1-03"]), ("M2", "Delivery", ["M2-01", "M2-02"])])
+        u = by_id(self.out)
+        self.assertEqual(u["M1-03"]["milestone"], "Foundations")   # `### M1-03: Logging` (colon) and `## M2: Delivery`
+        self.assertEqual(u["M2-02"]["milestone"], "Delivery")
+        self.assertEqual(u["M2-02"]["milestone_id"], "M2")
+        self.assertEqual(self.out["warnings"], [])
+
+    def test_scope_acceptance_labels_and_shared_line(self):
+        u = by_id(self.out)
+        self.assertEqual(u["M1-01"]["goal"], "lay out the directories and the build entry point.")
+        self.assertEqual(u["M1-01"]["acceptance"], "`make build` runs on a clean clone.")
+        self.assertEqual(u["M1-01"]["labels"], ["build", "infra"])     # same line as Depends on, after ·
+        self.assertEqual(u["M1-01"]["depends_on"], [])
+        self.assertEqual(u["M1-02"]["labels"], ["core"])               # same line, no separator
+        self.assertEqual(u["M1-02"]["depends_on"], ["M1-01"])
+        self.assertEqual(u["M1-02"]["acceptance"], "missing file → defaults\nmalformed file → exit 2")
+        self.assertEqual(u["M1-03"]["labels"], [])
+        self.assertEqual(u["M2-02"]["labels"], ["docs"])               # its own bullet
+
+    def test_cross_milestone_dependency(self):
+        self.assertEqual(by_id(self.out)["M2-01"]["depends_on"], ["M1-02", "M1-03"])
+
+    def test_profile_override_and_unified_shape_unchanged(self):
+        rc, out, _ = run("plan-units.py", MILESTONES, "--profile", "unified")
+        self.assertEqual(rc, 0)
+        self.assertEqual(out["count"], 0)   # no `### U<N>.` headings in a milestones plan
+        rc, out, _ = run("plan-units.py", os.path.join(CICD_PLANS, "sync-two.md"))
+        self.assertEqual(out["profile"], "unified")
+        self.assertEqual(out["milestones"], [])
+        self.assertEqual(sorted(out["units"][0].keys()),
+                         ["depends_on", "files", "goal", "id", "requirements", "title", "verification"])
+
+    def test_facts_custom_regexes(self):
+        d = tempfile.mkdtemp()
+        plan = os.path.join(d, "plan.md")
+        with open(plan, "w") as f:
+            f.write("## Phase A — Start\n\n### T1 One\n- **Does:** first\n- **After:** none\n\n"
+                    "## Phase B — Finish\n\n### T2 Two\n- **Does:** second\n- **After:** T1 · **Tags:** `x`\n")
+        facts = os.path.join(d, "facts.json")
+        with open(facts, "w") as f:
+            _json.dump({"plan": {"profile": "milestones", "milestone_heading": r"^## (Phase [A-Z]) — (.+?)\s*$",
+                                 "unit_heading": r"^### (T\d+)\s+(.+?)\s*$", "goal_bullet": "^does$",
+                                 "depends_bullet": "^after$", "labels_bullet": "^tags$", "unit_id": r"T\d+"}}, f)
+        core = os.path.join(d, "core.json")
+        with open(core, "w") as f:
+            _json.dump({"facts": []}, f)
+        rc, out, err = run("plan-units.py", plan, "--facts", facts, "--facts", core)
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(out["profile"], "milestones")
+        self.assertEqual([m["title"] for m in out["milestones"]], ["Start", "Finish"])
+        u = by_id(out)
+        self.assertEqual(u["T1"]["goal"], "first")
+        self.assertEqual(u["T2"]["depends_on"], ["T1"])
+        self.assertEqual(u["T2"]["labels"], ["x"])
+        self.assertEqual(u["T2"]["milestone"], "Finish")
+        # a bad regex in the facts is a usage error, not a crash
+        with open(facts, "w") as f:
+            _json.dump({"plan": {"unit_heading": "^### ("}}, f)
+        rc, out, _ = run("plan-units.py", plan, "--facts", facts)
+        self.assertEqual(rc, 2)
+        self.assertEqual(out["error"], "usage")
+
+
 if __name__ == "__main__":
     unittest.main()

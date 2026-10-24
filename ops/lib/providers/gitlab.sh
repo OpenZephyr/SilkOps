@@ -9,6 +9,8 @@ p_project_get()      { api_get "projects/$(_enc "$1")"; }
 p_group_get()        { api_get "groups/$(_enc "$1")"; }
 p_user_me()          { api_get user; }
 p_user_lookup()      { api_get "users?username=$(_enc "$1")"; }
+# p_user_id_by_username <username> — the id GitLab assigns by (assignee_ids); empty when unknown (#84)
+p_user_id_by_username() { p_user_lookup "$1" | jq -r --arg u "$1" '[.[] | select(.username == $u)] | first | .id // empty'; }
 p_member_level()     { api_get "projects/$(_enc "$1")/members/all/$2"; }
 p_protection_read()  { api_get "projects/$1/protected_branches"; }            # $1 = numeric project id
 # identity-aware probes for token-check: <identity> is settings | ci | session
@@ -49,6 +51,7 @@ p_job_retry()        { glab_ro api -X POST "projects/$(_enc "$1")/jobs/$2/retry"
 # --- issues, links, milestones --------------------------------------------------------
 p_issue_search_description() { api_get "projects/$(_enc "$1")/issues?search=$(_enc "$2")&in=description&state=all&scope=all&per_page=100"; }
 p_issue_list_by_label()      { api_get "projects/$(_enc "$1")/issues?labels=$(_enc "$2")&state=all&scope=all&per_page=100"; }
+p_issue_get()        { api_get "projects/$(_enc "$1")/issues/$2"; }
 p_issue_create()     { glab_ro api -X POST "projects/$(_enc "$1")/issues" --input "$2"; }
 p_issue_update()     { glab_ro api -X PUT "projects/$(_enc "$1")/issues/$2" --input "$3"; }
 p_has_issue_links()  { return 0; }

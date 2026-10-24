@@ -30,6 +30,8 @@ p_project_get() { _gh_get "$(_repo "$1")" | jq -c '{id, path_with_namespace: .fu
 p_group_get()   { _gh_get "orgs/$1" | jq -c '{id, path: .login, web_url: .html_url}'; }
 p_user_me()     { _gh_get user | jq -c '{id, username: .login, name: (.name // .login), bot: (.type == "Bot")}' | tee "${TMPDIR:-/tmp}/.silkops-gh-me.$$" ; }
 p_user_lookup() { _gh_get "users/$1" 2>/dev/null | jq -c '[{id, username: .login}]' || echo '[]'; }
+# GitHub assigns by login, so the "id" is the username itself (passthrough; _resolve_assignees keeps logins) (#84)
+p_user_id_by_username() { printf '%s\n' "$1"; }
 # GitHub needs a login for the permission call; the identity was fetched by p_user_me in this process.
 p_member_level() {
   local login; login="$(jq -r .username "${TMPDIR:-/tmp}/.silkops-gh-me.$$" 2>/dev/null || true)"; rm -f "${TMPDIR:-/tmp}/.silkops-gh-me.$$"
@@ -111,9 +113,13 @@ _issue_body() {  # GitLab-shaped body file → GitHub fields; assignee ids becom
 _resolve_assignees() {  # {assignee_ids:[id]} → {assignees:[login]}
   local ids logins='[]' id login
   ids="$(jq -c '.assignee_ids // []' "$1")"
-  for id in $(printf '%s' "$ids" | jq -r '.[]'); do login="$(_gh_get "user/$id" 2>/dev/null | jq -r '.login // empty' || true)"; [ -z "$login" ] || logins="$(jq -cn --argjson a "$logins" --arg l "$login" '$a + [$l]')"; done
+  for id in $(printf '%s' "$ids" | jq -r '.[]'); do
+    case "$id" in *[!0-9]*) login="$id" ;; *) login="$(_gh_get "user/$id" 2>/dev/null | jq -r '.login // empty' || true)" ;; esac   # a non-numeric id is already a login
+    [ -z "$login" ] || logins="$(jq -cn --argjson a "$logins" --arg l "$login" '$a + [$l]')"
+  done
   jq -c --argjson l "$logins" 'del(.assignee_ids) + (if ($l | length) > 0 then {assignees: $l} else {} end)' "$1"
 }
+p_issue_get()    { _gh_get "$(_repo "$1")/issues/$2" | jq -c "$_issue_norm"; }
 p_issue_create() { local b; b="$(mktemp)"; _issue_body "$2" >"$b.1"; _resolve_assignees "$b.1" >"$b"; _gh_json POST "$(_repo "$1")/issues" "$b" | jq -c "$_issue_norm"; rm -f "$b" "$b.1"; }
 p_issue_update() {
   local b cur; b="$(mktemp)"; _issue_body "$3" >"$b.1"; _resolve_assignees "$b.1" >"$b.2"

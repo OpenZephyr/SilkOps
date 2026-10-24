@@ -54,6 +54,11 @@ require_ci_token   # top level, so the exit-3 JSON and message reach the real st
 
 MARKER="$(silkops_marker "$PLAN" "$UNIT" "$RUN")"; MARKER="${MARKER%$'\n'}"
 BODY="$(cat "$BODY_FILE")"
+# @handles the host does not know (#84): warned and reported as dead_mentions[], never refused
+DEAD="$(dead_mentions "$BODY")"
+[ "$DEAD" = '[]' ] || err "warning: the body mentions handles the host does not know: $(printf '%s' "$DEAD" | jq -r 'map("@" + .) | join(", ")')"
+# emit <json> — result() plus the dead_mentions[] every outcome carries
+emit() { result "$(printf '%s' "$1" | jq -c --argjson dm "$DEAD" '. + {dead_mentions: $dm}')"; }
 # SILKOPS_MARKER=off (KTD3): identity is the u<N> label alone, so a --milestone re-sync,
 # where two plans' units share a label, is refused rather than guessed; the description is
 # the body verbatim and a re-sync replaces all of it.
@@ -152,17 +157,17 @@ if [ "$FOUND" != null ]; then
     PLANNED="$(jq -cn --argjson f "$FOUND" --arg b "$BODY"$'\n' '{had_region: false, changed: (($f.description // "") != $b), description: $b}')"
   fi
   if [ "$(printf '%s' "$PLANNED" | jq -r '.changed')" = false ]; then
-    result "$(jq -cn --argjson i "$IDENT" '$i + {action: "unchanged"}')"
+    emit "$(jq -cn --argjson i "$IDENT" '$i + {action: "unchanged"}')"
     exit 0
   fi
   if [ "$DRY" = true ]; then
-    result "$(jq -cn --argjson i "$IDENT" --argjson f "$FOUND" --argjson p "$PLANNED" '$i + {dry_run: true, action: "updated", current: {description: ($f.description // "")}, proposed: {description: $p.description}}')"
+    emit "$(jq -cn --argjson i "$IDENT" --argjson f "$FOUND" --argjson p "$PLANNED" '$i + {dry_run: true, action: "updated", current: {description: ($f.description // "")}, proposed: {description: $p.description}}')"
     exit 0
   fi
   printf '%s' "$PLANNED" | jq -c --arg labels "$LABELS" --argjson ms "$MILESTONE_ID" \
     --argjson extra "$EXTRA" '{description: .description} + (if $labels != "" then {add_labels: $labels} else {} end) + (if $ms != null then {milestone_id: $ms} else {} end) + $extra' >"$TMP/body.json"
   RESP="$(p_issue_update "$PROJECT" "$IID" "$TMP/body.json")" || fail "$EX_OTHER" update_failed "could not update issue #$IID" "$IDENT"
-  result "$(jq -cn --argjson i "$IDENT" --argjson r "$RESP" --argjson f "$FOUND" --argjson rb "$(read_back "$RESP")" '$i + {action: "updated", web_url: ($r.web_url // $i.web_url), prior: {description: ($f.description // "")}} + $rb')"
+  emit "$(jq -cn --argjson i "$IDENT" --argjson r "$RESP" --argjson f "$FOUND" --argjson rb "$(read_back "$RESP")" '$i + {action: "updated", web_url: ($r.web_url // $i.web_url), prior: {description: ($f.description // "")}} + $rb')"
   exit 0
 fi
 
@@ -174,10 +179,10 @@ else
 fi
 ALL_LABELS="$(jq -rn --arg l "$LABELS" --arg u "$ULABEL" '($l | split(",") | map(select(. != ""))) as $a | (if ($a | index($u)) == null then $a + [$u] else $a end) | join(",")')"
 if [ "$DRY" = true ]; then
-  result "$(jq -cn --arg t "$TITLE" --arg d "$DESC" --arg l "$ALL_LABELS" --argjson ms "$MILESTONE_ID" '{dry_run: true, action: "created", current: null, proposed: {title: $t, description: $d, labels: $l, milestone_id: $ms}}')"
+  emit "$(jq -cn --arg t "$TITLE" --arg d "$DESC" --arg l "$ALL_LABELS" --argjson ms "$MILESTONE_ID" '{dry_run: true, action: "created", current: null, proposed: {title: $t, description: $d, labels: $l, milestone_id: $ms}}')"
   exit 0
 fi
 jq -cn --arg t "$TITLE" --arg d "$DESC" --arg l "$ALL_LABELS" --argjson ms "$MILESTONE_ID" --argjson extra "$EXTRA" \
   '{title: $t, description: $d, labels: $l} + (if $ms != null then {milestone_id: $ms} else {} end) + $extra' >"$TMP/body.json"
 RESP="$(p_issue_create "$PROJECT" "$TMP/body.json")" || fail "$EX_OTHER" create_failed "could not create the issue in $PROJECT"
-result "$(printf '%s' "$RESP" | jq -c --arg id "$IDENTITY" --argjson m "$MARKER_ON" --argjson rb "$(read_back "$RESP")" '{action: "created", iid: .iid, web_url: .web_url, state: .state, identity: $id, marker: $m} + $rb')"
+emit "$(printf '%s' "$RESP" | jq -c --arg id "$IDENTITY" --argjson m "$MARKER_ON" --argjson rb "$(read_back "$RESP")" '{action: "created", iid: .iid, web_url: .web_url, state: .state, identity: $id, marker: $m} + $rb')"
