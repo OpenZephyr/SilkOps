@@ -90,7 +90,7 @@ with "Embed scene".
 ## Develop
 
 - `bash tests/run.sh`: tier 1, offline and fixture-driven, gates every change.
-- `AGENTS.md` holds the conventions; `CLAUDE.md` and `GEMINI.md` only import it.
+- `AGENTS.md` holds the conventions; `.claude/CLAUDE.md` and `GEMINI.md` only import it.
 - Source of truth is GitLab; GitHub (`OpenZephyr/SilkOps`) is a main-only mirror, and
   `silkops inbox --repo OpenZephyr/SilkOps` lists what people file there.
 - Release: tag `silkops-harness--vX.Y.Z` on main (CI publishes the asset to GitLab), then
