@@ -65,8 +65,8 @@ class Runbook(unittest.TestCase):
             self.assertEqual(json.loads(r.stdout)["facts"], 2)
 
     def test_claude_md_is_the_agents_md_import(self):
-        # KD4 (v0.2): AGENTS.md is the conventions file; CLAUDE.md only imports it.
-        self.assertEqual(open(os.path.join(ROOT, "CLAUDE.md")).read().strip(), "@AGENTS.md")
+        # KD4 (v0.2): AGENTS.md is the conventions file; .claude/CLAUDE.md only imports it (a root CLAUDE.md fails plugin validation).
+        self.assertEqual(open(os.path.join(ROOT, ".claude", "CLAUDE.md")).read().strip(), "@AGENTS.md")
         self.assertTrue(os.path.exists(os.path.join(ROOT, "AGENTS.md")))
         self.assertFalse(os.path.exists(os.path.join(ROOT, "references", "claude-md-snippet.md")))
 
