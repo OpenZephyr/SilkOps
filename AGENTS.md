@@ -5,7 +5,7 @@ scripts (`ops/`) over `glab`, plus the core facts they share. Plans of record:
 `ci-cd/docs/plans/2026-09-02-2334-feat-silkops-harness-plan.md` (v0.1),
 `ci-cd/docs/plans/2026-09-22-1200-feat-silkops-harness-public-split-plan.md` (v0.2) and
 `ci-cd/docs/plans/2026-09-23-0800-feat-silkops-harness-agnostic-plan.md` (v0.3). Cluster CronJobs and `kubectl` are out of scope.
-This file is read by every agent; `CLAUDE.md` only imports it.
+This file is read by every agent; `.claude/CLAUDE.md` only imports it (a root `CLAUDE.md` fails `claude plugin validate --strict`).
 
 ## Output
 
@@ -19,7 +19,7 @@ This file is read by every agent; `CLAUDE.md` only imports it.
 - `bin/silkops <verb> …` is the entry command every skill uses (`silkops watch --project P --mr 7`);
   it runs the matching `ops/` script from any cwd or agent. `silkops doctor` reports the machine.
 - `silkops install-agent <name|all>` links the skills where each agent looks (`adapters/<name>/README.md`).
-  `GEMINI.md` and `CLAUDE.md` are one-line imports of this file.
+  `GEMINI.md` and `.claude/CLAUDE.md` are one-line imports of this file.
 - Bash for operations, Python 3.9 stdlib for parsers. Dependencies: `glab`, `jq`, `curl`,
   the stock interpreter. Nothing else. Structured inputs are JSON (no YAML parser exists).
 - Every script sources `ops/lib/prelude.sh` (`set -euo pipefail`, no shell tracing, redaction).
