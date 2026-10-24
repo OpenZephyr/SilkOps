@@ -73,5 +73,17 @@ if [ "$(rc_of k5)" = 7 ] && out_of k5 | jq -e '.error == "style"' >/dev/null && 
   pass "K5 subject over 72 chars -> exit 7 style; nothing named and nothing staged -> exit 2"
 else fail "K5" "rc=$(rc_of k5)/$(rc_of k5b) out=$(out_of k5) / $(out_of k5b)"; fi
 
+# K6 (#72): a path removed with `git rm` is a staged deletion — the commit picks it up, no raw git add death
+R="$SCRATCH/repo-k6"; mkrepo "$R" false; git -C "$R" rm -q f2; echo x >"$R/new"
+M="$(msg "Replace f2 with new")"; run k6 "$R" --path f2 --path new --message-file "$M"
+if [ "$(rc_of k6)" = 0 ] && out_of k6 | jq -e '.ok == true and .files == ["f2", "new"]' >/dev/null && [ ! -e "$R/f2" ] && [ -z "$(git -C "$R" status --porcelain)" ]; then
+  pass "K6 (#72) --path on a git-rm'd file commits the staged deletion alongside an added file"
+else fail "K6" "rc=$(rc_of k6) out=$(out_of k6) err=$(err_of k6 | tail -2)"; fi
+# K6b (#72): a path git cannot add is a JSON error (exit 1, add_failed) carrying git's line, never a bare death
+R="$SCRATCH/repo-k6b"; mkrepo "$R" false; M="$(msg "Add missing")"; run k6b "$R" --path nope --message-file "$M"
+if [ "$(rc_of k6b)" = 1 ] && out_of k6b | jq -e '.ok == false and .error == "add_failed" and (.message | test("pathspec"))' >/dev/null && [ "$(git -C "$R" rev-list --count HEAD)" = 5 ]; then
+  pass "K6b (#72) an unaddable path -> exit 1 add_failed with git's pathspec line in the JSON"
+else fail "K6b" "rc=$(rc_of k6b) out=$(out_of k6b) err=$(err_of k6b | tail -2)"; fi
+
 echo "test-commit: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]
