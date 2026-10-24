@@ -32,7 +32,7 @@ done
 top="$(git rev-parse --show-toplevel 2>/dev/null)" || fail "$EX_USAGE" usage "the cwd is not inside a git repository"
 cd "$top"
 PLUGIN=.claude-plugin/plugin.json; MARKET=.claude-plugin/marketplace.json
-[ -f "$PLUGIN" ] && [ -f "$MARKET" ] || fail "$EX_NOT_FOUND" not_found "no $PLUGIN / $MARKET under $top"
+if ! { [ -f "$PLUGIN" ] && [ -f "$MARKET" ]; }; then fail "$EX_NOT_FOUND" not_found "no $PLUGIN / $MARKET under $top"; fi
 tag="silkops-harness--v${VERSION}"
 branch="$(git rev-parse --abbrev-ref HEAD)"
 default_branch="$(git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || true)"; default_branch="${default_branch#origin/}"; default_branch="${default_branch:-main}"
