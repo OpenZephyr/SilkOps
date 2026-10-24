@@ -1,7 +1,16 @@
 {
-  "schema_version": "1",
-  "description": "Core environment facts: generic GitLab, Docker and runner behaviour only (KTD7, v0.2 KD1). Each `pattern` is a Python regex applied to every cleaned trace line (\\r and ANSI stripped); classify-failure.py takes the first matching fact across the layers it is given (repo .silkops/facts.json, overlay, then this file), so specific signatures come first. `source` names the file:line the wording is lifted from. `retry_safe` is the fact's own verdict; the `silkops: no-retry-after=` declaration can still veto it. A consumer's facts belong in its own .silkops/facts.json, a machine's in the plugin overlay.",
+  "schema_version": "2",
+  "description": "Core environment facts: generic GitLab, Docker and runner behaviour only (KTD7, v0.2 KD1). A fact's signature is `pattern` (a Python regex applied to every cleaned trace line, \\r and ANSI stripped) and/or `failure_reason` (a regex over the host's job failure_reason, checked before the trace; both must match when both are given). Optional `jobs` scopes the fact to job names matching the regex; `retired: true` keeps a fact for history and makes the classifier skip it. classify-failure.py takes the first matching fact across the layers it is given (repo .silkops/facts.json, overlay, then this file), so specific signatures come first. `source` names the file:line the wording is lifted from. `retry_safe` is the fact's own verdict; the `silkops: no-retry-after=` declaration can still veto it. A consumer's facts belong in its own .silkops/facts.json, a machine's in the plugin overlay.",
   "facts": [
+    {
+      "id": "ci_quota_exceeded",
+      "failure_reason": "^ci_quota_exceeded$",
+      "explanation": "The namespace's shared-runner compute quota is exhausted: GitLab fails the job before a runner picks it up, so the trace is empty and the job's failure_reason says `ci_quota_exceeded`. Retrying spends nothing and changes nothing until the quota resets or the jobs move to a project runner. Tag the jobs for a project runner (`tags: [<runner>]`), and override the template jobs too (SAST, Secret-Detection, Dependency-Scanning): included templates do not inherit the project's tags, so they stay on the shared runners and keep failing.",
+      "class": "permanent",
+      "retry_safe": false,
+      "step": "job scheduling (shared-runner compute quota, before any script runs)",
+      "source": "tests/fixtures/glab-stub/watch-common/jobs-failed-quota.json"
+    },
     {
       "id": "dind-service-dns",
       "pattern": "dial tcp: lookup \\S+ on 169\\.254\\.169\\.254:53: no such host",

@@ -5,14 +5,24 @@ U4 of the silkOps harness plan; implements KTD6 (retry semantics, the
 `silkops: no-retry-after=<pattern>` declaration) over KTD7 (one facts file feeds the
 runbook and this matcher). Stdlib only; Python 3.9.
 
-Usage: classify-failure.py <trace|-> [--facts FILE ...] [--strict]
+Usage: classify-failure.py <trace|-> [--facts FILE ...] [--failure-reason REASON]
+                           [--job-name NAME] [--strict]
 
 `--facts` repeats; files are searched in the order given (repo, overlay, core), so an
 earlier file wins on an overlapping pattern. Default: facts/environment.json alone.
 
-Each fact in facts/environment.json carries `id, pattern (Python regex applied to the
-cleaned trace lines), explanation, class (transient|permanent), retry_safe, step, source`.
-The first fact (file order) with a hit wins; every hit is recorded. The job may declare
+Each fact in facts/environment.json carries `id, explanation, class (transient|permanent),
+retry_safe, step, source` and at least one signature: `pattern` (Python regex applied to
+every cleaned trace line) and/or `failure_reason` (regex matched against the host's job
+failure_reason, e.g. `ci_quota_exceeded`, `runner_system_failure`, `script_failure`, given
+with --failure-reason). Per fact, in order: a `retired: true` fact is skipped (kept for
+history); a fact with `jobs` (regex over the job name, --job-name) applies only when the
+job name matches; `failure_reason` is checked before the trace and must match when given;
+`pattern` must hit a trace line when given — both must hold when both are given. A
+failure_reason-only fact matches an EMPTY trace (a quota-killed job prints nothing). The
+first fact (file order) that matches wins; `matched_on` says whether it was the
+`failure_reason`, the `trace`, or `failure_reason+trace`. Every trace hit of an applicable
+fact is recorded. The job may declare
 its non-retryable step by printing `silkops: no-retry-after=<regex>`; when a line
 matching that regex appears BEFORE the job's failure line (the runner's `ERROR: Job failed`,
 else the winning fact's LAST hit — anything printed before the runner gave up has executed),
@@ -87,10 +97,24 @@ def load_facts(path):
         fail(EX_OTHER, "facts_invalid", "facts file has no `facts` list: %s" % path)
     compiled = []
     for fact in facts:
-        try:
-            compiled.append((fact, re.compile(fact.get("pattern", ""))))
-        except re.error as e:
-            fail(EX_OTHER, "facts_invalid", "fact %r has an invalid pattern: %s" % (fact.get("id"), e))
+        if not isinstance(fact, dict):
+            fail(EX_OTHER, "facts_invalid", "facts file has a non-object fact: %s" % path)
+        rxs = {}
+        for key in ("pattern", "failure_reason", "jobs"):
+            val = fact.get(key)
+            if val in (None, ""):
+                rxs[key] = None
+                continue
+            if not isinstance(val, str):
+                fail(EX_OTHER, "facts_invalid", "fact %r: %s is not a string" % (fact.get("id"), key))
+            try:
+                rxs[key] = re.compile(val)
+            except re.error as e:
+                fail(EX_OTHER, "facts_invalid", "fact %r has an invalid %s: %s" % (fact.get("id"), key, e))
+        if rxs["pattern"] is None and rxs["failure_reason"] is None and not fact.get("retired"):
+            fail(EX_OTHER, "facts_invalid",
+                 "fact %r has neither pattern nor failure_reason" % fact.get("id"))
+        compiled.append((fact, rxs))
     return compiled
 
 
@@ -109,7 +133,20 @@ def compile_declaration(decl):
         return re.compile(re.escape(decl))
 
 
-def classify(lines, facts, facts_path):
+def fact_applies(fact, rxs, failure_reason, job_name):
+    """The gates before any trace scan: retired facts never apply; a `jobs` scope needs the
+    job name to match; a `failure_reason` signature needs the host's reason to match."""
+    if fact.get("retired"):
+        return False
+    if rxs["jobs"] is not None and (job_name is None or not rxs["jobs"].search(job_name)):
+        return False
+    if rxs["failure_reason"] is not None and (failure_reason is None
+                                              or not rxs["failure_reason"].search(failure_reason)):
+        return False
+    return True
+
+
+def classify(lines, facts, facts_path, failure_reason=None, job_name=None):
     # declaration (first occurrence, never a `$ ` command echo)
     decl, decl_idx = None, None
     for idx, l in enumerate(lines):
@@ -119,16 +156,27 @@ def classify(lines, facts, facts_path):
             break
     decl_rx = compile_declaration(decl)
 
-    hits, winner, winner_last = [], None, None
-    for fact, rx in facts:
-        last = None
-        for idx, l in enumerate(lines):
-            if rx.search(l["text"]):
-                last = idx
-                if len(hits) < HITS_CAP:
-                    hits.append({"fact": fact.get("id"), "line_no": l["no"], "line": l["text"].strip()})
-        if last is not None and winner is None:
+    hits, winner, winner_last, matched_on = [], None, None, None
+    for fact, rxs in facts:
+        if not fact_applies(fact, rxs, failure_reason, job_name):
+            continue
+        rx, last = rxs["pattern"], None
+        if rx is not None:
+            for idx, l in enumerate(lines):
+                if rx.search(l["text"]):
+                    last = idx
+                    if len(hits) < HITS_CAP:
+                        hits.append({"fact": fact.get("id"), "line_no": l["no"], "line": l["text"].strip()})
+            if last is None:
+                continue
+        if winner is None:
             winner, winner_last = fact, last
+            if rx is None:
+                matched_on = "failure_reason"
+            elif rxs["failure_reason"] is None:
+                matched_on = "trace"
+            else:
+                matched_on = "failure_reason+trace"
 
     # failure position: the runner's own `ERROR: Job failed` line — everything before it has
     # executed, so a marker anywhere before it must veto the retry. Without one (truncated
@@ -158,8 +206,9 @@ def classify(lines, facts, facts_path):
 
     if winner is None:
         cls, transient, retry_safe = "unknown", False, False
-        reason = ("no fact in %s matched the trace; an unknown failure is never retried automatically"
-                  % os.path.basename(facts_path))
+        reason = ("no fact in %s matched the trace%s; an unknown failure is never retried automatically"
+                  % (os.path.basename(facts_path),
+                     " or failure_reason %s" % failure_reason if failure_reason else ""))
     else:
         cls = winner.get("class", "unknown")
         transient = cls == "transient"
@@ -187,6 +236,7 @@ def classify(lines, facts, facts_path):
         "transient": transient,
         "retry_safe": retry_safe,
         "fact": winner.get("id") if winner else None,
+        "matched_on": matched_on,
         "class": cls,
         "reason": reason,
         "no_retry_after": decl,
@@ -197,6 +247,8 @@ def classify(lines, facts, facts_path):
         "source": winner.get("source") if winner else None,
         "hits": hits,
         "facts_file": facts_path,
+        "failure_reason": failure_reason,
+        "job_name": job_name,
     }
 
 
@@ -205,13 +257,19 @@ def main(argv):
     p.add_argument("trace", help="trace file, or - for stdin")
     p.add_argument("--facts", action="append", metavar="FILE",
                    help="facts file, repeatable; earlier files win (default facts/environment.json)")
+    p.add_argument("--failure-reason", metavar="REASON", default=None,
+                   help="the host's job failure_reason (ci_quota_exceeded, runner_system_failure, ...); "
+                        "facts with a failure_reason signature match against it, before the trace")
+    p.add_argument("--job-name", metavar="NAME", default=None,
+                   help="the job's name; facts scoped with `jobs` apply only when it matches")
     p.add_argument("--strict", action="store_true", help="exit 6 when retry is unsafe")
     args = p.parse_args(argv)
 
     paths = args.facts or [DEFAULT_FACTS]
     facts = [f for path in paths for f in load_facts(path)]
     raw = T.read_trace(args.trace)
-    out = classify(T.split_lines(raw), facts, ",".join(paths))
+    out = classify(T.split_lines(raw), facts, ",".join(paths),
+                   failure_reason=args.failure_reason or None, job_name=args.job_name or None)
     out["source"] = args.trace
     err("%s: class=%s retry_safe=%s" % (out["fact"] or "unknown", out["class"], out["retry_safe"]))
     emit(out)

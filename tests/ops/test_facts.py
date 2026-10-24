@@ -31,7 +31,11 @@ def run(script, *args, stdin=None):
         out = _json.loads(lines[0])
     return p.returncode, out, p.stderr
 
-REQUIRED = ("id", "pattern", "explanation", "class", "retry_safe", "step", "source")
+REQUIRED = ("id", "explanation", "class", "retry_safe", "step", "source")
+# schema 2 (#80, #83): a fact signs with `pattern` (trace regex) and/or `failure_reason`
+# (regex over the host's job failure_reason); `jobs` scopes it to job names; `retired` parks it.
+SIGNATURES = ("pattern", "failure_reason")
+OPTIONAL_REGEX = ("pattern", "failure_reason", "jobs")
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 
@@ -49,7 +53,7 @@ class FactsFile(unittest.TestCase):
         cls.facts = cls.doc["facts"]
 
     def test_schema_version(self):
-        self.assertEqual(self.doc["schema_version"], "1")
+        self.assertEqual(self.doc["schema_version"], "2")
         self.assertIsInstance(self.facts, list)
         self.assertGreaterEqual(len(self.facts), 10)
 
@@ -58,9 +62,18 @@ class FactsFile(unittest.TestCase):
             for key in REQUIRED:
                 self.assertIn(key, fact, "fact %r lacks %s" % (fact.get("id"), key))
                 self.assertNotEqual(fact[key], "", "fact %r has empty %s" % (fact.get("id"), key))
+            self.assertTrue(any(fact.get(k) for k in SIGNATURES),
+                            "fact %r has neither pattern nor failure_reason" % fact.get("id"))
+            for key in OPTIONAL_REGEX:
+                if key in fact:
+                    self.assertIsInstance(fact[key], str, "%s.%s" % (fact["id"], key))
+                    self.assertNotEqual(fact[key], "", "%s.%s is empty" % (fact["id"], key))
+            if "retired" in fact:
+                self.assertIs(fact["retired"], True, "%s.retired is only ever true" % fact["id"])
             self.assertIn(fact["class"], ("transient", "permanent"), fact["id"])
             self.assertIsInstance(fact["retry_safe"], bool, fact["id"])
-            self.assertRegex(fact["id"], r"^[a-z0-9][a-z0-9-]*$")
+            # ids are hyphenated; a fact named after a host failure_reason keeps its underscores
+            self.assertRegex(fact["id"], r"^[a-z0-9][a-z0-9_-]*$")
             # A fact's source names where it was learned. Facts now come from more than one
             # repo, so an optional `<repo> ` qualifier precedes the path, and a path may be
             # followed by `:<line>`, `:<from>-<to>`, or a short free-text locator naming the
@@ -73,7 +86,19 @@ class FactsFile(unittest.TestCase):
 
     def test_patterns_compile(self):
         for fact in self.facts:
-            re.compile(fact["pattern"])
+            for key in OPTIONAL_REGEX:
+                if key in fact:
+                    re.compile(fact[key])
+
+    def test_quota_fact_signs_on_failure_reason_alone(self):
+        fact = next(f for f in self.facts if f["id"] == "ci_quota_exceeded")
+        self.assertNotIn("pattern", fact)
+        self.assertRegex("ci_quota_exceeded", fact["failure_reason"])
+        self.assertIsNone(re.search(fact["failure_reason"], "script_failure"))
+        self.assertEqual(fact["class"], "permanent")
+        self.assertFalse(fact["retry_safe"])
+        self.assertIn("tags:", fact["explanation"])
+        self.assertIn("SAST", fact["explanation"])
 
     def test_ids_unique(self):
         ids = [f["id"] for f in self.facts]
@@ -85,8 +110,12 @@ class FactsFile(unittest.TestCase):
                 self.assertFalse(fact["retry_safe"], fact["id"])
 
     def _first_match(self, path):
+        # the trace-only view: facts without a pattern (failure_reason-only) and retired
+        # facts never match a trace by themselves
         lines = cleaned_lines(path)
         for fact in self.facts:
+            if fact.get("retired") or not fact.get("pattern"):
+                continue
             rx = re.compile(fact["pattern"])
             if any(rx.search(l) for l in lines):
                 return fact
@@ -113,7 +142,7 @@ class FactsFile(unittest.TestCase):
 
     def test_expected_ids_present(self):
         ids = {f["id"] for f in self.facts}
-        for want in ("pull-access-denied", "ipv6-service-alias", "registry-listing-lag",
+        for want in ("ci_quota_exceeded", "pull-access-denied", "ipv6-service-alias", "registry-listing-lag",
                      "misfiring-cron-every-minute", "manifest-inspect-network-error",
                      "cross-project-variable-expansion", "git-identity-missing",
                      "bind-mount-outside-builds", "tag-already-exists"):
