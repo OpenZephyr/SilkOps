@@ -68,6 +68,7 @@ p_note_post() { _gt POST "$(_repo "$1")/issues/$3/comments" "$4" | jq -c '{id, b
 p_run_get()   { _gt_get "$(_repo "$1")/actions/runs/$2" | jq -c "$_run_norm"; }
 p_run_jobs()  { _gt_get "$(_repo "$1")/actions/runs/$2/jobs?limit=$3&page=$4" | jq -c "[.jobs[] | $_job_norm]"; }
 p_run_last_success() { _gt_get "$(_repo "$1")/actions/runs?branch=$(urlenc "$2")&status=success&limit=1" | jq -c "[.workflow_runs[] | $_run_norm]"; }
+p_run_latest()       { _gt_get "$(_repo "$1")/actions/runs?branch=$(urlenc "$2")&limit=1" | jq -c "[.workflow_runs[] | $_run_norm]"; }
 p_run_for_ref_sha()  { _gt_get "$(_repo "$1")/actions/runs?head_sha=$3&limit=20" | jq -c "[.workflow_runs[] | $_run_norm]"; }
 p_job_log()   { _gt_get "$(_repo "$1")/actions/jobs/$2/logs"; }
 p_job_retry() { _gt POST "$(_repo "$1")/actions/jobs/$2/rerun" >/dev/null && jq -cn --argjson id "$2" '{id: $id, rerun: true}'; }

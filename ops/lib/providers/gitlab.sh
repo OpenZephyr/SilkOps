@@ -42,6 +42,7 @@ p_note_post()        { glab_ro api -X POST "$(_notes_path "$1" "$2" "$3")" --inp
 p_run_get()          { api_get "projects/$(_enc "$1")/pipelines/$2"; }
 p_run_jobs()         { api_get "projects/$(_enc "$1")/pipelines/$2/jobs?include_retried=true&per_page=$3&page=$4"; }
 p_run_last_success() { api_get "projects/$(_enc "$1")/pipelines?ref=$(_enc "$2")&status=success&per_page=1"; }
+p_run_latest()       { api_get "projects/$(_enc "$1")/pipelines?ref=$(_enc "$2")&per_page=1"; }   # newest pipeline of a ref, any status
 p_run_for_ref_sha()  { api_get "projects/$(_enc "$1")/pipelines?ref=$(_enc "$2")&sha=$3&per_page=1"; }
 p_job_log()          { glab_ro api -X GET "projects/$(_enc "$1")/jobs/$2/trace"; }
 p_job_retry()        { glab_ro api -X POST "projects/$(_enc "$1")/jobs/$2/retry"; }

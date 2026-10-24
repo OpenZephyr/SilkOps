@@ -8,8 +8,8 @@ argument-hint: "<mr-iid> [--project <group/project>] [--sibling <mr-iid>]"
 
 Result: one JSON line from `silkops after-merge` with `merged`,
 `branch_deleted`, `closes_issues[] {iid, state}`, `issues_still_open[]`, `sibling {checked,
-missing[]}`, `default_branch_pipeline` and a `resume_hint` for `watch-pipeline`. Never merges;
-exit 7 when the MR is not merged yet.
+missing[]}`, `default_branch_pipeline`, `main_pipeline {id, status}`, `main_only_regressions[]`
+and a `resume_hint` for `watch-pipeline`. Never merges; exit 7 when the MR is not merged yet.
 
 ## Steps
 
@@ -20,9 +20,11 @@ exit 7 when the MR is not merged yet.
    keyword, or a different project); say which, do not close them from here.
 3. `sibling.missing` non-empty: the conflict resolution kept only one side; name the lines and
    the older MR, and stop for a human. Pass `--sibling` whenever `ship-mr` reported `siblings[]`.
-4. `resume_hint` present: hand it to `watch-pipeline` so the default-branch pipeline is watched
+4. `main_only_regressions` non-empty: jobs green on the MR but failed or skipped on the default
+   branch (a `rules:`/`needs:` difference); name each with `main_status`, this is the next fix.
+5. `resume_hint` present: hand it to `watch-pipeline` so the default-branch pipeline is watched
    to its verdict.
-5. Report: branch state, issues, sibling verdict, pipeline.
+6. Report: branch state, issues, sibling verdict, regressions, pipeline.
 
 ## Guardrails
 

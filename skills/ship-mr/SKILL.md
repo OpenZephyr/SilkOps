@@ -25,7 +25,8 @@ never merges and never commits; the `commit` skill runs first.
 4. `silkops mr-upsert --project P --source <branch> --target <default> --title "<U-IDs — title>"
    --description-file <f> --marker-unit <U-ID|mr> --plan <basename> --run <id> [--draft]`.
    It finds an open MR for the branch first; `updated` on a branch you thought new means one existed.
-5. Print `web_url`, then invoke `watch-pipeline` with the `iid` and the same `--project`.
+5. Print `web_url`, then invoke `watch-pipeline` with the `iid` and the same `--project`; report
+   the default-branch pipeline state (`default_branch`) from the watch's first result.
 
 ## Disclosure
 
