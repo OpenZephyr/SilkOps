@@ -1,10 +1,17 @@
 # SilkOps
 
-Skills that let a coding agent commit, ship a branch, watch its pipeline, explain a failure and
-file issues from a plan, on GitLab, GitHub or Gitea, with no hand-written API glue. It never
-merges. A human does.
+Delivery skills for coding agents on GitLab and GitHub.
 
-![one loop, ending at a human](docs/diagrams/ship-watch-loop.excalidraw.svg)
+An agent can write the change. Getting it merged is still hand work: open the merge request,
+wait for the pipeline, read the failing job, retry the flaky one, file the follow-ups, tidy up
+after the merge. Left to itself an agent polls with `sleep`, improvises API calls in chat, prints
+tokens into logs, and sometimes merges.
+
+SilkOps gives the agent one command for each of those steps. Every command returns one JSON
+object and a fixed exit code, so the agent acts on facts instead of guessing at output. It never
+merges. A person does.
+
+![the loop: commit, ship, watch, a person merges, after-merge](docs/diagrams/ship-watch-loop.excalidraw.svg)
 
 ## Install
 
@@ -14,7 +21,9 @@ merges. A human does.
 /plugin marketplace add OpenZephyr/SilkOps
 /plugin install silkops@silkops
 ```
-then once, in a terminal, so the skills find the `silkops` command:
+
+Then once, in a terminal, so the skills find the `silkops` command:
+
 ```
 bash ~/.claude/plugins/cache/silkops/silkops/*/bin/silkops install-agent claude-code
 ```
@@ -26,8 +35,8 @@ git clone https://github.com/OpenZephyr/SilkOps.git ~/.silkops
 ~/.silkops/bin/silkops install-agent all
 ```
 
-Needs `jq`, `curl`, Python 3.9 and the host CLI: `glab` for GitLab, `gh` for GitHub, a
-`GITEA_TOKEN` for Gitea. Tokens are read from the environment only.
+Requires `jq`, `curl`, Python 3.9, and the host CLI: `glab` for GitLab or `gh` for GitHub.
+Tokens are read from the environment only.
 
 ## Try it
 
@@ -37,38 +46,40 @@ silkops watch --project group/project --mr 42
 {"ok":true,"provider":"gitlab","status":"success","ready":true, …}
 ```
 
-Every verb prints one JSON object and a fixed exit code, so an agent can act on it without
-guessing. In a repo, say "adopt silkops" and the agent sets the conventions block and ships the
-first merge request.
+In a repository, tell the agent "adopt silkops". It checks the token, adds the conventions block,
+and ships the first merge request.
 
 ## Skills
 
-| skill | does |
+| Skill | What it does |
 |---|---|
-| `adopt` | connect a repo: check the token, add the conventions block, ship the first MR |
-| `commit` | commit named paths in the repo's own message style |
-| `ship-mr` | push the branch, open or update its MR, hand off to the watch |
-| `watch-pipeline` | bounded watch, fact-based triage, one safe retry, a ready verdict |
-| `after-merge` | after a human merged: prune, confirm linked issues, watch the default branch |
-| `verify-handoff` | file one issue per surface a session could not test, plus a status doc |
-| `milestone-from-plan` | a plan's units become a milestone with linked issues |
-| `verify-findings` | sub-agents try to refute each review finding at a pinned sha; only what survives is filed |
-| `file-residuals` | review findings as issues, deduplicated by finding |
-| `trace-timing` | where the time goes in a job, ranked with numbers |
-| `registry-ops` | zero-copy retag, digest compare, tag listing |
-| `consumer-onboarding` | connect a project to an image factory, one confirmation per settings write |
+| `adopt` | Connect a repository: check the token, add the conventions block, ship the first MR |
+| `commit` | Commit named paths in the repository's own message style |
+| `ship-mr` | Push the branch, open or update its merge request, hand off to the watch |
+| `watch-pipeline` | Bounded wait, triage against known failure facts, one safe retry, a ready verdict |
+| `after-merge` | After a person merged: prune, confirm linked issues closed, watch the default branch |
+| `milestone-from-plan` | Turn a plan's units into a milestone with dependency-linked issues |
+| `verify-findings` | Sub-agents try to refute each review finding at a pinned commit; only survivors are filed |
+| `file-residuals` | File review findings as issues, deduplicated per finding |
+| `verify-handoff` | File one issue per surface a session could not test |
+| `trace-timing` | Rank where the time goes in a job |
+| `registry-ops` | Zero-copy retag, digest compare, tag listing |
+| `consumer-onboarding` | Connect a project to an image factory, one confirmation per settings write |
 
-## Scope
+## Guarantees
 
-Never merges, never pushes a protected branch, never edits a closed issue. Tokens never enter
-argv, URLs or output. `SILKOPS_MARKER=off` makes every write anonymous. Pipelines and workflow
-runs are in scope; cluster CronJobs and anything behind `kubectl` are not.
+- Never merges, never pushes a protected branch, never edits a closed issue.
+- Tokens never appear in arguments, URLs, or output.
+- Every write names its target project explicitly.
+- `SILKOPS_MARKER=off` makes every write anonymous, for repositories you do not own.
 
-## More
+Pipelines and workflow runs are in scope. Clusters and anything behind `kubectl` are not.
 
-- Hosts, and what each concept means on each: `docs/providers.md`
-- Failure facts and their three layers: `docs/facts.md`
-- Tests, mirror and release: `CONTRIBUTING.md`
-- Diagrams: `docs/diagrams/README.md`
+## Documentation
 
-MIT. Issues and pull requests are welcome on GitHub.
+- [Hosts and what each concept maps to](docs/providers.md)
+- [Failure facts and their three layers](docs/facts.md)
+- [Tests, mirror, and releases](CONTRIBUTING.md)
+- [Diagrams](docs/diagrams/README.md)
+
+MIT licensed. Issues and pull requests are welcome.

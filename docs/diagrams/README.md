@@ -7,7 +7,7 @@ with "Embed scene" on.
 
 | scene | shows |
 |---|---|
-| `ship-watch-loop` | one loop from commit to a human merge |
+| `ship-watch-loop` | the delivery loop: commit, ship, watch, a person merges, after-merge |
 | `architecture` | skills over ops over the host CLI |
 | `fact-layers` | the three fact layers and their precedence |
 | `providers` | scripts speak verbs; a provider speaks its host |
