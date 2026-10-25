@@ -8,6 +8,9 @@
 _gh() { { gh "$@" 2>&1 1>&3 | redact 1>&2; } 3>&1; }
 _gh_get() { _gh api -X GET "$1"; }
 _gh_json() { _gh api -X "$1" "$2" --input "$3"; }          # body from file
+# A write's status must survive the temp-file cleanup (#91): capture the call, clean up, then
+# normalise; a refused write returns gh's status instead of rm's 0.
+_gh_write() { local m="$1" p="$2" norm="$3"; shift 3; local out rc=0; out="$(_gh_json "$m" "$p" "$1")" || rc=$?; rm -f "$@"; [ "$rc" = 0 ] || return "$rc"; printf '%s\n' "$out" | jq -c "$norm"; }
 _repo() { printf 'repos/%s' "$1"; }
 # --- normalisers (GitHub → the harness's GitLab-shaped keys) ------------------------
 _pr_norm='{iid: .number, number: .number, provider: "github", web_url: .html_url, title, description: (.body // ""),
@@ -76,8 +79,8 @@ p_registry_reads_api() { return 1; }
 _owner() { printf '%s' "${1%%/*}"; }
 p_mr_find_by_branch() { _gh_get "$(_repo "$1")/pulls?head=$(_owner "$1"):$(urlenc "$2")&state=open&per_page=${3:-10}" | jq -c "[.[] | $_pr_norm]"; }
 p_mr_get()      { _gh_get "$(_repo "$1")/pulls/$2" | jq -c "$_pr_norm"; }
-p_mr_create()   { local b; b="$(mktemp)"; jq -c '{title, body: .description, head: .source_branch, base: .target_branch, draft: (.draft // false)}' "$2" >"$b"; _gh_json POST "$(_repo "$1")/pulls" "$b" | jq -c "$_pr_norm"; rm -f "$b"; }
-p_mr_update()   { local b; b="$(mktemp)"; jq -c '({body: .description} + (if .title then {title} else {} end))' "$3" >"$b"; _gh_json PATCH "$(_repo "$1")/pulls/$2" "$b" | jq -c "$_pr_norm"; rm -f "$b"; }
+p_mr_create()   { local b; b="$(mktemp)"; jq -c '{title, body: .description, head: .source_branch, base: .target_branch, draft: (.draft // false)}' "$2" >"$b"; _gh_write POST "$(_repo "$1")/pulls" "$_pr_norm" "$b"; }
+p_mr_update()   { local b; b="$(mktemp)"; jq -c '({body: .description} + (if .title then {title} else {} end))' "$3" >"$b"; _gh_write PATCH "$(_repo "$1")/pulls/$2" "$_pr_norm" "$b"; }
 p_mr_list_open() { _gh_get "$(_repo "$1")/pulls?state=open&base=$(urlenc "$2")&per_page=20" | jq -c "[.[] | $_pr_norm]"; }
 p_mr_diffs()    { _gh_get "$(_repo "$1")/pulls/$2/files?per_page=100" | jq -c '[.[] | {new_path: .filename, old_path: (.previous_filename // .filename), diff: (.patch // "")}]'; }
 # shellcheck disable=SC2016  # GraphQL variables ($o, $r, $n) are for the API, not the shell
@@ -120,17 +123,17 @@ _resolve_assignees() {  # {assignee_ids:[id]} → {assignees:[login]}
   jq -c --argjson l "$logins" 'del(.assignee_ids) + (if ($l | length) > 0 then {assignees: $l} else {} end)' "$1"
 }
 p_issue_get()    { _gh_get "$(_repo "$1")/issues/$2" | jq -c "$_issue_norm"; }
-p_issue_create() { local b; b="$(mktemp)"; _issue_body "$2" >"$b.1"; _resolve_assignees "$b.1" >"$b"; _gh_json POST "$(_repo "$1")/issues" "$b" | jq -c "$_issue_norm"; rm -f "$b" "$b.1"; }
+p_issue_create() { local b; b="$(mktemp)"; _issue_body "$2" >"$b.1"; _resolve_assignees "$b.1" >"$b"; _gh_write POST "$(_repo "$1")/issues" "$_issue_norm" "$b" "$b.1"; }
 p_issue_update() {
   local b cur; b="$(mktemp)"; _issue_body "$3" >"$b.1"; _resolve_assignees "$b.1" >"$b.2"
   # add_labels is additive: union with the labels the issue already has
   if jq -e '.add_labels' "$3" >/dev/null; then cur="$(_gh_get "$(_repo "$1")/issues/$2" | jq -c '[.labels[]?.name]')"; jq -c --argjson c "$cur" '.labels = (($c + (.labels // [])) | unique)' "$b.2" >"$b"; else cp "$b.2" "$b"; fi
-  _gh_json PATCH "$(_repo "$1")/issues/$2" "$b" | jq -c "$_issue_norm"; rm -f "$b" "$b.1" "$b.2"
+  _gh_write PATCH "$(_repo "$1")/issues/$2" "$_issue_norm" "$b" "$b.1" "$b.2"
 }
 p_has_issue_links() { return 1; }
 p_issue_links()     { echo '[]'; }
 p_issue_link_post() { echo "gh: HTTP 400 GitHub has no issue links (blocked-by) in REST; issue-link records the dependency in the managed region instead" >&2; return 1; }
 p_milestone_search() { _gh_get "$(_repo "$1")/milestones?state=all&per_page=100" | jq -c --arg t "$2" "[.[] | select(.title | ascii_downcase | contains(\$t | ascii_downcase)) | $_ms_norm]"; }
 p_milestone_by_title() { p_milestone_search "$1" "$2" | jq -c --arg t "$2" '[.[] | select(.title == $t)]'; }
-p_milestone_create() { local b; b="$(mktemp)"; jq -c '{title, description} + (if .due_date then {due_on: (.due_date + "T00:00:00Z")} else {} end)' "$2" >"$b"; _gh_json POST "$(_repo "$1")/milestones" "$b" | jq -c "$_ms_norm"; rm -f "$b"; }
-p_milestone_update() { local b; b="$(mktemp)"; jq -c '{description} + (if .title then {title} else {} end) + (if .due_date then {due_on: (.due_date + "T00:00:00Z")} else {} end)' "$3" >"$b"; _gh_json PATCH "$(_repo "$1")/milestones/$2" "$b" | jq -c "$_ms_norm"; rm -f "$b"; }
+p_milestone_create() { local b; b="$(mktemp)"; jq -c '{title, description} + (if .due_date then {due_on: (.due_date + "T00:00:00Z")} else {} end)' "$2" >"$b"; _gh_write POST "$(_repo "$1")/milestones" "$_ms_norm" "$b"; }
+p_milestone_update() { local b; b="$(mktemp)"; jq -c '{description} + (if .title then {title} else {} end) + (if .due_date then {due_on: (.due_date + "T00:00:00Z")} else {} end)' "$3" >"$b"; _gh_write PATCH "$(_repo "$1")/milestones/$2" "$_ms_norm" "$b"; }

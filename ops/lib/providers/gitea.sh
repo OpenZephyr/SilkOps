@@ -24,6 +24,8 @@ _gt() {
   case "$code" in 2*) return 0 ;; *) echo "gitea: HTTP $code ($m $p)" >&2; return 1 ;; esac
 }
 _gt_get() { _gt GET "$1"; }
+# Same status rule as github.sh (#91): the write's status survives the temp-file cleanup.
+_gt_write() { local m="$1" p="$2" norm="$3"; shift 3; local out rc=0; out="$(_gt "$m" "$p" "$1")" || rc=$?; rm -f "$@"; [ "$rc" = 0 ] || return "$rc"; printf '%s\n' "$out" | jq -c "$norm"; }
 _repo() { printf 'repos/%s' "$1"; }
 _owner() { printf '%s' "${1%%/*}"; }
 _pr_norm='{iid: .number, number: .number, provider: "gitea", web_url: .html_url, title, description: (.body // ""),
@@ -56,8 +58,8 @@ p_raw() { _gt_get "$2"; }
 # --- pull requests as merge requests ---------------------------------------------------
 p_mr_find_by_branch() { _gt_get "$(_repo "$1")/pulls?state=open&limit=50" | jq -c --arg b "$2" "[.[] | select(.head.ref == \$b) | $_pr_norm]"; }
 p_mr_get()      { _gt_get "$(_repo "$1")/pulls/$2" | jq -c "$_pr_norm"; }
-p_mr_create()   { local b; b="$(mktemp)"; jq -c '{title, body: .description, head: .source_branch, base: .target_branch}' "$2" >"$b"; _gt POST "$(_repo "$1")/pulls" "$b" | jq -c "$_pr_norm"; rm -f "$b"; }
-p_mr_update()   { local b; b="$(mktemp)"; jq -c '({body: .description} + (if .title then {title} else {} end))' "$3" >"$b"; _gt PATCH "$(_repo "$1")/pulls/$2" "$b" | jq -c "$_pr_norm"; rm -f "$b"; }
+p_mr_create()   { local b; b="$(mktemp)"; jq -c '{title, body: .description, head: .source_branch, base: .target_branch}' "$2" >"$b"; _gt_write POST "$(_repo "$1")/pulls" "$_pr_norm" "$b"; }
+p_mr_update()   { local b; b="$(mktemp)"; jq -c '({body: .description} + (if .title then {title} else {} end))' "$3" >"$b"; _gt_write PATCH "$(_repo "$1")/pulls/$2" "$_pr_norm" "$b"; }
 p_mr_list_open() { _gt_get "$(_repo "$1")/pulls?state=open&limit=50" | jq -c --arg t "$2" "[.[] | select(.base.ref == \$t) | $_pr_norm]"; }
 p_mr_diffs()    { _gt_get "$(_repo "$1")/pulls/$2/files?limit=100" | jq -c '[.[] | {new_path: .filename, old_path: (.previous_filename // .filename), diff: (.patch // "")}]'; }
 p_mr_approvals() { _gt_get "$(_repo "$1")/pulls/$2/reviews" | jq -c '[.[] | .state] as $s | {review_decision: (if ($s | index("REQUEST_CHANGES")) then "CHANGES_REQUESTED" elif ($s | index("APPROVED")) then "APPROVED" else null end)} | . + {approved: (.review_decision != "CHANGES_REQUESTED"), approvals_left: (if .review_decision == "CHANGES_REQUESTED" then 1 else 0 end), approvals_required: 0}'; }
@@ -93,16 +95,16 @@ _issue_body() {  # GitLab-shaped file → Gitea fields (labels by id, assignees 
     + (if .assignee_ids then {assignees: [.assignee_ids[] | select(type == "string")]} else {} end) | with_entries(select(.value != null))' "$2"
 }
 p_issue_get()    { _gt_get "$(_repo "$1")/issues/$2" | jq -c "$_issue_norm"; }
-p_issue_create() { local b; b="$(mktemp)"; _issue_body "$1" "$2" >"$b"; _gt POST "$(_repo "$1")/issues" "$b" | jq -c "$_issue_norm"; rm -f "$b"; }
-p_issue_update() { local b; b="$(mktemp)"; _issue_body "$1" "$3" >"$b"; _gt PATCH "$(_repo "$1")/issues/$2" "$b" | jq -c "$_issue_norm"; rm -f "$b"; }
+p_issue_create() { local b; b="$(mktemp)"; _issue_body "$1" "$2" >"$b"; _gt_write POST "$(_repo "$1")/issues" "$_issue_norm" "$b"; }
+p_issue_update() { local b; b="$(mktemp)"; _issue_body "$1" "$3" >"$b"; _gt_write PATCH "$(_repo "$1")/issues/$2" "$_issue_norm" "$b"; }
 p_has_issue_links() { return 0; }
 p_issue_links()     { _gt_get "$(_repo "$1")/issues/$2/dependencies" | jq -c --arg p "$1" '[.[] | {iid: .number, project_id: .repository.id, link_type: "blocks"}]'; }
 # p_issue_link_post <P> <source iid> <target project id> <target iid> <type> — "source blocks target": the target depends on the source
-p_issue_link_post() { local b; b="$(mktemp)"; jq -cn --arg o "$(_owner "$1")" --arg r "${1#*/}" --argjson i "$2" '{owner: $o, repo: $r, index: $i}' >"$b"; _gt POST "$(_repo "$1")/issues/$4/dependencies" "$b" | jq -c '{link_type: "blocks", source_iid: '"$2"', target_iid: '"$4"'}'; rm -f "$b"; }
+p_issue_link_post() { local b; b="$(mktemp)"; jq -cn --arg o "$(_owner "$1")" --arg r "${1#*/}" --argjson i "$2" '{owner: $o, repo: $r, index: $i}' >"$b"; _gt_write POST "$(_repo "$1")/issues/$4/dependencies" '{link_type: "blocks", source_iid: '"$2"', target_iid: '"$4"'}' "$b"; }
 p_milestone_search() { _gt_get "$(_repo "$1")/milestones?state=all&limit=100" | jq -c --arg t "$2" "[.[] | select(.title | ascii_downcase | contains(\$t | ascii_downcase)) | $_ms_norm]"; }
 p_milestone_by_title() { p_milestone_search "$1" "$2" | jq -c --arg t "$2" '[.[] | select(.title == $t)]'; }
-p_milestone_create() { local b; b="$(mktemp)"; jq -c '{title, description} + (if .due_date then {due_on: (.due_date + "T00:00:00Z")} else {} end)' "$2" >"$b"; _gt POST "$(_repo "$1")/milestones" "$b" | jq -c "$_ms_norm"; rm -f "$b"; }
-p_milestone_update() { local b; b="$(mktemp)"; jq -c '{description} + (if .title then {title} else {} end) + (if .due_date then {due_on: (.due_date + "T00:00:00Z")} else {} end)' "$3" >"$b"; _gt PATCH "$(_repo "$1")/milestones/$2" "$b" | jq -c "$_ms_norm"; rm -f "$b"; }
+p_milestone_create() { local b; b="$(mktemp)"; jq -c '{title, description} + (if .due_date then {due_on: (.due_date + "T00:00:00Z")} else {} end)' "$2" >"$b"; _gt_write POST "$(_repo "$1")/milestones" "$_ms_norm" "$b"; }
+p_milestone_update() { local b; b="$(mktemp)"; jq -c '{description} + (if .title then {title} else {} end) + (if .due_date then {due_on: (.due_date + "T00:00:00Z")} else {} end)' "$3" >"$b"; _gt_write PATCH "$(_repo "$1")/milestones/$2" "$_ms_norm" "$b"; }
 # --- Actions variables and secrets, registry ---------------------------------------------------
 p_variable_list() {
   local v s

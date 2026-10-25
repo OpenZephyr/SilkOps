@@ -19,6 +19,12 @@ if [ "$(rc_of i1)" = 0 ] && out_of i1 | jq -e '.action == "created" and .iid == 
   pass "GI1 github: issue created with labels as a list, milestone by number, assignee by login"
 else fail "GI1" "rc=$(rc_of i1) out=$(out_of i1) body=$(body_of i1 1 2>/dev/null) log=$(log_of i1 | tr '\n' ';' | head -c 400)"; fi
 
+# #91: a refused write must not be reported as success; the provider's cleanup used to mask gh's status
+run_case i2 "$GH/issues-refused" SILKOPS_PROVIDER=github -- --project "$PROJECT" --marker-unit U4 --plan plan.md --run r2 --title "U4 gap fillers" --body-file "$BODY" --milestone "Harness v0.1" --labels harness,u4
+if [ "$(rc_of i2)" != 0 ] && ! out_of i2 | jq -e '.ok == true' >/dev/null 2>&1 && out_of i2 | jq -e '.ok == false' >/dev/null; then
+  pass "GI2 github: a 403 on create exits nonzero with ok:false instead of action created, iid null"
+else fail "GI2" "rc=$(rc_of i2) out=$(out_of i2)"; fi
+
 SCRIPT="$ROOT/ops/issue-link.sh"
 run_case l1 "$GH/issues" SILKOPS_PROVIDER=github -- --project "$PROJECT" --source 10 --target 11 --type blocks
 if [ "$(rc_of l1)" = 0 ] && out_of l1 | jq -e '.fallback == "managed_region" and .depends_on_line == "Blocked by #10" and .link_type == null' >/dev/null && [ "$(writes_of l1)" = 0 ]; then
