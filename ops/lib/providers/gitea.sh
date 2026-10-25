@@ -24,8 +24,9 @@ _gt() {
   case "$code" in 2*) return 0 ;; *) echo "gitea: HTTP $code ($m $p)" >&2; return 1 ;; esac
 }
 _gt_get() { _gt GET "$1"; }
-# Same status rule as github.sh (#91): the write's status survives the temp-file cleanup.
-_gt_write() { local m="$1" p="$2" norm="$3"; shift 3; local out rc=0; out="$(_gt "$m" "$p" "$1")" || rc=$?; rm -f "$@"; [ "$rc" = 0 ] || return "$rc"; printf '%s\n' "$out" | jq -c "$norm"; }
+# Same status rule as github.sh (#91): the write's status survives the temp-file cleanup; a refused
+# write's error body is forwarded to stderr (#86).
+_gt_write() { local m="$1" p="$2" norm="$3"; shift 3; local out rc=0; out="$(_gt "$m" "$p" "$1")" || rc=$?; rm -f "$@"; [ "$rc" = 0 ] || { [ -z "$out" ] || printf '%s\n' "$out" | redact >&2; return "$rc"; }; printf '%s\n' "$out" | jq -c "$norm"; }
 _repo() { printf 'repos/%s' "$1"; }
 _owner() { printf '%s' "${1%%/*}"; }
 _pr_norm='{iid: .number, number: .number, provider: "gitea", web_url: .html_url, title, description: (.body // ""),
@@ -97,6 +98,7 @@ _issue_body() {  # GitLab-shaped file → Gitea fields (labels by id, assignees 
 p_issue_get()    { _gt_get "$(_repo "$1")/issues/$2" | jq -c "$_issue_norm"; }
 p_issue_create() { local b; b="$(mktemp)"; _issue_body "$1" "$2" >"$b"; _gt_write POST "$(_repo "$1")/issues" "$_issue_norm" "$b"; }
 p_issue_update() { local b; b="$(mktemp)"; _issue_body "$1" "$3" >"$b"; _gt_write PATCH "$(_repo "$1")/issues/$2" "$_issue_norm" "$b"; }
+p_issue_close()  { local b; b="$(mktemp)"; printf '{"state":"closed"}\n' >"$b"; _gt_write PATCH "$(_repo "$1")/issues/$2" "$_issue_norm" "$b"; }
 p_has_issue_links() { return 0; }
 p_issue_links()     { _gt_get "$(_repo "$1")/issues/$2/dependencies" | jq -c --arg p "$1" '[.[] | {iid: .number, project_id: .repository.id, link_type: "blocks"}]'; }
 # p_issue_link_post <P> <source iid> <target project id> <target iid> <type> — "source blocks target": the target depends on the source

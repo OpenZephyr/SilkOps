@@ -9,8 +9,9 @@ _gh() { { gh "$@" 2>&1 1>&3 | redact 1>&2; } 3>&1; }
 _gh_get() { _gh api -X GET "$1"; }
 _gh_json() { _gh api -X "$1" "$2" --input "$3"; }          # body from file
 # A write's status must survive the temp-file cleanup (#91): capture the call, clean up, then
-# normalise; a refused write returns gh's status instead of rm's 0.
-_gh_write() { local m="$1" p="$2" norm="$3"; shift 3; local out rc=0; out="$(_gh_json "$m" "$p" "$1")" || rc=$?; rm -f "$@"; [ "$rc" = 0 ] || return "$rc"; printf '%s\n' "$out" | jq -c "$norm"; }
+# normalise; a refused write returns gh's status instead of rm's 0, and the host's error body (gh
+# prints it on stdout) is forwarded to stderr so the caller can quote the reason (#86).
+_gh_write() { local m="$1" p="$2" norm="$3"; shift 3; local out rc=0; out="$(_gh_json "$m" "$p" "$1")" || rc=$?; rm -f "$@"; [ "$rc" = 0 ] || { [ -z "$out" ] || printf '%s\n' "$out" | redact >&2; return "$rc"; }; printf '%s\n' "$out" | jq -c "$norm"; }
 _repo() { printf 'repos/%s' "$1"; }
 # --- normalisers (GitHub → the harness's GitLab-shaped keys) ------------------------
 _pr_norm='{iid: .number, number: .number, provider: "github", web_url: .html_url, title, description: (.body // ""),
@@ -130,6 +131,8 @@ p_issue_update() {
   if jq -e '.add_labels' "$3" >/dev/null; then cur="$(_gh_get "$(_repo "$1")/issues/$2" | jq -c '[.labels[]?.name]')"; jq -c --argjson c "$cur" '.labels = (($c + (.labels // [])) | unique)' "$b.2" >"$b"; else cp "$b.2" "$b"; fi
   _gh_write PATCH "$(_repo "$1")/issues/$2" "$_issue_norm" "$b" "$b.1" "$b.2"
 }
+# p_issue_close <P> <iid> — the one state change the harness makes; never a reopen (#87)
+p_issue_close()  { local b; b="$(mktemp)"; printf '{"state":"closed"}\n' >"$b"; _gh_write PATCH "$(_repo "$1")/issues/$2" "$_issue_norm" "$b"; }
 p_has_issue_links() { return 1; }
 p_issue_links()     { echo '[]'; }
 p_issue_link_post() { echo "gh: HTTP 400 GitHub has no issue links (blocked-by) in REST; issue-link records the dependency in the managed region instead" >&2; return 1; }

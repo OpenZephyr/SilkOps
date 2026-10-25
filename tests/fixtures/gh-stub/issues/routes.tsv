@@ -3,6 +3,10 @@ PATCH	repos/*/milestones/3	../common/milestone-3.json
 GET	search/issues*	../common/search-empty.json
 GET	repos/*/issues?labels=*	../common/empty.json
 POST	repos/*/issues	../common/issue-created.json	201
+GET	repos/*/issues/13	../common/issue-13-open.json
+PATCH	repos/*/issues/13	../common/issue-13-closed.json
+POST	repos/*/issues/13/comments	../common/comment-created.json	201
+GET	repos/*/collaborators/*/permission	../common/permission-write.json
 GET	users/aqua	../common/user.json
 GET	user/42	../common/user.json
 GET	repos/example/silkops-harness	../common/repo.json

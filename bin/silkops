@@ -10,7 +10,8 @@ verb_script() {
   case "$1" in
     watch) echo ops/watch.sh ;;                mr-upsert) echo ops/mr-upsert.sh ;;
     issue-upsert) echo ops/issue-upsert.sh ;;  issue-link) echo ops/issue-link.sh ;;
-    issue-edit) echo ops/issue-edit.sh ;;      link) echo ops/link.sh ;;
+    issue-edit) echo ops/issue-edit.sh ;;      issue-close) echo ops/issue-close.sh ;;
+    link) echo ops/link.sh ;;
     milestone-upsert) echo ops/milestone-upsert.sh ;; milestone-sync) echo ops/milestone-sync.sh ;;
     note) echo ops/note.sh ;;                  commit) echo ops/commit.sh ;;
     after-merge) echo ops/after-merge.sh ;;    token-check) echo ops/token-check.sh ;;
@@ -23,7 +24,7 @@ verb_script() {
     *) return 1 ;;
   esac
 }
-VERBS="watch mr-upsert issue-upsert issue-link issue-edit link milestone-upsert milestone-sync note commit after-merge token-check registry schedule variable allowlist inbox conventions classify trace plan-units render-runbook verify-merge redact doctor install-agent"
+VERBS="watch mr-upsert issue-upsert issue-link issue-edit issue-close link milestone-upsert milestone-sync note commit after-merge token-check registry schedule variable allowlist inbox conventions classify trace plan-units render-runbook verify-merge redact doctor install-agent"
 
 usage() {
   echo "usage: silkops <verb> [args…]   verbs: $VERBS" >&2

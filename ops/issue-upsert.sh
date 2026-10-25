@@ -12,6 +12,10 @@
 # never edited (exit 7). An open one has ONLY its managed region replaced (text outside is
 # byte-identical) and the marker's run= refreshed; an identical region means zero writes.
 # Not found → created with body = marker + managed region wrapping the body file.
+# GitHub without push access (#86): labels are never sent (GitHub refuses the create when a
+# label is missing, 403, and silently drops labels a read/triage caller sets); with markers off
+# the identity is a visible footer line `silkops-id: <plan>/<unit>`, found back by body search.
+# The result says which: identity marker | label | body_footer, labels_applied true | false.
 # Session identity (the operator authors the issue), never the settings token.
 # Exit: 0 ok · 2 usage · 3 token missing (CI) · 5 milestone not found
 #       7 closed issue / ambiguous identity · 1 other (lookup or write failed).
@@ -108,7 +112,27 @@ if [ -n "$MILESTONE" ]; then
   fi
 fi
 
-# --- find: marker first, then label u<N> ------------------------------------
+# --- GitHub: may the caller set labels? (#86) ---------------------------------------------
+# Push access (write and above) is what GitHub needs for labels. Below it, or when the probe
+# itself fails, nothing is sent as `labels`; with markers off the footer carries the identity.
+CAN_LABEL=true; ROLE=null
+if [ "$SILKOPS_PROVIDER" = github ]; then
+  ROLE_JSON="$(p_user_me >/dev/null 2>&1 && p_member_level "$PROJECT" - 2>/dev/null)" || ROLE_JSON=""
+  if [ -n "$ROLE_JSON" ]; then
+    ROLE="$(printf '%s' "$ROLE_JSON" | jq -c '.role_name // null')"
+    [ "$(printf '%s' "$ROLE_JSON" | jq -r '.access_level // 0')" -ge 30 ] || CAN_LABEL=false
+  else CAN_LABEL=false; err "warning: could not read the caller's role on $PROJECT; filing without labels"; fi
+  if [ "$CAN_LABEL" = false ]; then
+    if [ "$MARKER_ON" = true ]; then how="the marker comment"; else how="a 'silkops-id: $PLAN/$UNIT' footer line"; fi
+    err "warning: no push access to $PROJECT (role $ROLE): labels dropped (GitHub refuses or ignores them); identity by $how"
+  fi
+fi
+FOOTER=""   # the identity line appended to the body when it is the identity
+if [ "$MARKER_ON" = false ] && [ "$CAN_LABEL" = false ]; then FOOTER="silkops-id: $PLAN/$UNIT"; IDENTITY=body_footer; fi
+# off_description — the description with markers off: the body verbatim, plus the footer when set
+off_description() { if [ -n "$FOOTER" ]; then printf '%s\n\n%s\n' "$BODY" "$FOOTER"; else printf '%s\n' "$BODY"; fi; }
+
+# --- find: marker first, then label u<N>, then (GitHub, markers off) the footer ----------
 CANDS='[]'
 if [ "$MARKER_ON" = true ]; then
 lookup "search $PROJECT issues for the marker plan=$PLAN unit=$UNIT" "$TMP/by-marker.json" p_issue_search_description "$PROJECT" "plan=$PLAN unit=$UNIT"
@@ -141,12 +165,24 @@ if [ "$FOUND" = null ]; then
     || ambiguous "more than one issue labelled $ULABEL could be unit $UNIT of $PLAN"
   FOUND="$(printf '%s' "$CANDS" | jq -c 'first // null')"
 fi
+# An issue filed without push access carries no label, only the footer: search bodies for it
+# whatever the caller's role is now, so a later push-access run finds it instead of duplicating.
+if [ "$FOUND" = null ] && [ "$MARKER_ON" = false ] && [ "$SILKOPS_PROVIDER" = github ]; then
+  FID="silkops-id: $PLAN/$UNIT"
+  lookup "search $PROJECT issue bodies for '$FID'" "$TMP/by-footer.json" p_issue_search_description "$PROJECT" "$FID"
+  CANDS="$(jq -c --arg f "$FID" "$JQ_DEFS"'[.[] | select(marker_line("^\($f | rq)$"))]
+    | if any(.state == "opened") then map(select(.state == "opened")) else . end' "$TMP/by-footer.json")"
+  [ "$(printf '%s' "$CANDS" | jq -r 'map(select(.state == "opened")) | length')" -le 1 ] \
+    || ambiguous "more than one open issue carries the footer '$FID'"
+  FOUND="$(printf '%s' "$CANDS" | jq -c 'first // null')"
+  [ "$FOUND" = null ] || { FOOTER="$FID"; IDENTITY=body_footer; }
+fi
 
 if [ "$FOUND" != null ]; then
   IID="$(printf '%s' "$FOUND" | jq -r '.iid')"
   STATE="$(printf '%s' "$FOUND" | jq -r '.state')"
   WEB="$(printf '%s' "$FOUND" | jq -r '.web_url // ""')"
-  IDENT="$(jq -cn --argjson iid "$IID" --arg w "$WEB" --arg id "$IDENTITY" --argjson m "$MARKER_ON" '{iid: $iid, web_url: $w, identity: $id, marker: $m}')"
+  IDENT="$(jq -cn --argjson iid "$IID" --arg w "$WEB" --arg id "$IDENTITY" --argjson m "$MARKER_ON" --argjson la "$CAN_LABEL" '{iid: $iid, web_url: $w, identity: $id, marker: $m, labels_applied: $la}')"
   [ "$STATE" != closed ] || fail "$EX_REFUSED" closed_issue "issue #$IID is closed; the harness never edits or reopens a closed issue (KTD5)" "$IDENT"
 
   # New description: only the managed region changes; the marker's run= is refreshed.
@@ -154,7 +190,7 @@ if [ "$FOUND" != null ]; then
   if [ "$MARKER_ON" = true ]; then
     PLANNED="$(managed_region_plan "$FOUND" "$BODY" "$MARKER" "$RUN")"
   else
-    PLANNED="$(jq -cn --argjson f "$FOUND" --arg b "$BODY"$'\n' '{had_region: false, changed: (($f.description // "") != $b), description: $b}')"
+    PLANNED="$(jq -cn --argjson f "$FOUND" --arg b "$(off_description)"$'\n' '{had_region: false, changed: (($f.description // "") != $b), description: $b}')"
   fi
   if [ "$(printf '%s' "$PLANNED" | jq -r '.changed')" = false ]; then
     emit "$(jq -cn --argjson i "$IDENT" '$i + {action: "unchanged"}')"
@@ -164,8 +200,8 @@ if [ "$FOUND" != null ]; then
     emit "$(jq -cn --argjson i "$IDENT" --argjson f "$FOUND" --argjson p "$PLANNED" '$i + {dry_run: true, action: "updated", current: {description: ($f.description // "")}, proposed: {description: $p.description}}')"
     exit 0
   fi
-  printf '%s' "$PLANNED" | jq -c --arg labels "$LABELS" --argjson ms "$MILESTONE_ID" \
-    --argjson extra "$EXTRA" '{description: .description} + (if $labels != "" then {add_labels: $labels} else {} end) + (if $ms != null then {milestone_id: $ms} else {} end) + $extra' >"$TMP/body.json"
+  printf '%s' "$PLANNED" | jq -c --arg labels "$LABELS" --argjson ms "$MILESTONE_ID" --argjson can "$CAN_LABEL" \
+    --argjson extra "$EXTRA" '{description: .description} + (if $labels != "" and $can then {add_labels: $labels} else {} end) + (if $ms != null then {milestone_id: $ms} else {} end) + $extra' >"$TMP/body.json"
   RESP="$(p_issue_update "$PROJECT" "$IID" "$TMP/body.json")" || fail "$EX_OTHER" update_failed "could not update issue #$IID" "$IDENT"
   emit "$(jq -cn --argjson i "$IDENT" --argjson r "$RESP" --argjson f "$FOUND" --argjson rb "$(read_back "$RESP")" '$i + {action: "updated", web_url: ($r.web_url // $i.web_url), prior: {description: ($f.description // "")}} + $rb')"
   exit 0
@@ -175,14 +211,18 @@ fi
 if [ "$MARKER_ON" = true ]; then
   DESC="$(jq -rn --arg marker "$MARKER" --arg body "$BODY" '$marker + "\n<!-- silkops:managed -->\n" + $body + "\n<!-- /silkops:managed -->\n"')"
 else
-  DESC="$BODY"$'\n'
+  DESC="$(off_description)"$'\n'
 fi
-ALL_LABELS="$(jq -rn --arg l "$LABELS" --arg u "$ULABEL" '($l | split(",") | map(select(. != ""))) as $a | (if ($a | index($u)) == null then $a + [$u] else $a end) | join(",")')"
+# the labels to send: the caller's plus u<N>; none at all without push access on GitHub (#86)
+ALL_LABELS="$(jq -rn --arg l "$LABELS" --arg u "$ULABEL" --argjson can "$CAN_LABEL" 'if $can | not then "" else ($l | split(",") | map(select(. != ""))) as $a | (if ($a | index($u)) == null then $a + [$u] else $a end) | join(",") end')"
+IDENT="$(jq -cn --arg id "$IDENTITY" --argjson m "$MARKER_ON" --argjson la "$CAN_LABEL" '{identity: $id, marker: $m, labels_applied: $la}')"
 if [ "$DRY" = true ]; then
-  emit "$(jq -cn --arg t "$TITLE" --arg d "$DESC" --arg l "$ALL_LABELS" --argjson ms "$MILESTONE_ID" '{dry_run: true, action: "created", current: null, proposed: {title: $t, description: $d, labels: $l, milestone_id: $ms}}')"
+  emit "$(jq -cn --argjson i "$IDENT" --arg t "$TITLE" --arg d "$DESC" --arg l "$ALL_LABELS" --argjson ms "$MILESTONE_ID" '$i + {dry_run: true, action: "created", current: null, proposed: {title: $t, description: $d, labels: $l, milestone_id: $ms}}')"
   exit 0
 fi
-jq -cn --arg t "$TITLE" --arg d "$DESC" --arg l "$ALL_LABELS" --argjson ms "$MILESTONE_ID" --argjson extra "$EXTRA" \
-  '{title: $t, description: $d, labels: $l} + (if $ms != null then {milestone_id: $ms} else {} end) + $extra' >"$TMP/body.json"
-RESP="$(p_issue_create "$PROJECT" "$TMP/body.json")" || fail "$EX_OTHER" create_failed "could not create the issue in $PROJECT"
-emit "$(printf '%s' "$RESP" | jq -c --arg id "$IDENTITY" --argjson m "$MARKER_ON" --argjson rb "$(read_back "$RESP")" '{action: "created", iid: .iid, web_url: .web_url, state: .state, identity: $id, marker: $m} + $rb')"
+jq -cn --arg t "$TITLE" --arg d "$DESC" --arg l "$ALL_LABELS" --argjson ms "$MILESTONE_ID" --argjson extra "$EXTRA" --argjson can "$CAN_LABEL" \
+  '{title: $t, description: $d} + (if $can then {labels: $l} else {} end) + (if $ms != null then {milestone_id: $ms} else {} end) + $extra' >"$TMP/body.json"
+# a refused create quotes the host's reason (the #91 fix made the status visible; #86 the message)
+RESP="$(p_issue_create "$PROJECT" "$TMP/body.json" 2>"$TMP/create.err")" \
+  || fail "$EX_OTHER" create_failed "could not create the issue in $PROJECT: $(redact <"$TMP/create.err" | tr '\n' ' ' | sed 's/ *$//')" "$IDENT"
+emit "$(printf '%s' "$RESP" | jq -c --argjson i "$IDENT" --argjson rb "$(read_back "$RESP")" '{action: "created", iid: .iid, web_url: .web_url, state: .state} + $i + $rb')"

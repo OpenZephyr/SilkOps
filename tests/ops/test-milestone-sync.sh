@@ -22,11 +22,24 @@ if [ "$(rc_of s1)" = 0 ] && out_of s1 | jq -e '.ok == true and .milestone.title 
   pass "S1 plan -> milestone updated, U1 #21 and U2 #22 re-synced, U1 blocks U2 linked, one JSON report, four writes"
 else fail "S1" "rc=$(rc_of s1) out=$(out_of s1 | head -c 800) writes=$(writes_of s1) log=$(log_of s1 | grep -E 'X (PUT|POST)' | tr '\n' ';')"; fi
 
-# S2: --dry-run writes nothing and still reports the plan
+# S2: --dry-run writes nothing and still reports the plan; each entry carries the exact proposed text (#88)
 run_case s2 sync-two -- --project "$PROJECT" --plan "$PLAN" --run r9 --dry-run
-if [ "$(rc_of s2)" = 0 ] && out_of s2 | jq -e '.dry_run == true and (.issues | length) == 2' >/dev/null && [ "$(writes_of s2)" = 0 ]; then
-  pass "S2 dry-run: zero writes, the plan is still reported"
-else fail "S2" "rc=$(rc_of s2) out=$(out_of s2 | head -c 400) writes=$(writes_of s2)"; fi
+if [ "$(rc_of s2)" = 0 ] && out_of s2 | jq -e '.dry_run == true and (.issues | length) == 2
+      and .issues[0].proposed.title == "U1 — First thing" and (.issues[0].proposed.description | contains("**Goal.** do the first thing."))
+      and (.issues[0].proposed.labels | index("silkops") != null and index("u1") != null) and .issues[0].proposed.milestone == "Harness v0.1"
+      and (.issues[1].proposed.description | contains("do the second thing."))' >/dev/null && [ "$(writes_of s2)" = 0 ]; then
+  pass "S2 dry-run: zero writes; every entry carries proposed {title, labels, description, milestone} with the unit body untruncated"
+else fail "S2" "rc=$(rc_of s2) out=$(out_of s2 | head -c 600) writes=$(writes_of s2)"; fi
+
+# S2b: --show is the same dry run plus a readable preview (title, labels, body) on stderr
+run_case s2b sync-two -- --project "$PROJECT" --plan "$PLAN" --run r9 --show
+if [ "$(rc_of s2b)" = 0 ] && out_of s2b | jq -e '.dry_run == true and .issues[0].proposed.title == "U1 — First thing"' >/dev/null && [ "$(writes_of s2b)" = 0 ] \
+  && err_of s2b | grep -F -- '--- U1 — First thing' >/dev/null && err_of s2b | grep -E '^labels: .*u1' >/dev/null && err_of s2b | grep -F 'do the first thing.' >/dev/null; then
+  pass "S2b --show: dry run plus a stderr preview naming the title, labels and body of each issue; zero writes"
+else fail "S2b" "rc=$(rc_of s2b) err=$(err_of s2b | head -c 400) writes=$(writes_of s2b)"; fi
+
+# S2c: without --dry-run the entries carry no proposed text
+if out_of s1 | jq -e '.issues[0] | has("proposed") | not' >/dev/null; then pass "S2c a live sync carries no proposed text"; else fail "S2c" "$(out_of s1 | head -c 300)"; fi
 
 # S3: an ad-hoc set (no plan): assignee, due date, blocked_by by unit name, marker namespace adhoc-<slug>
 cat >"$SCRATCH/adhoc.json" <<'JSON'

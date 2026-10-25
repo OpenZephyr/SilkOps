@@ -19,14 +19,17 @@
 # Composes milestone-upsert.sh, issue-upsert.sh and issue-link.sh; never merges, never edits a
 # closed issue (those scripts refuse). One JSON report: {milestone, milestones[], issues[], links[]}
 # (`milestone` is the single one, null when the plan declares several).
+# --dry-run (#88): each issue entry carries `proposed {title, labels[], description, milestone}`,
+#   the exact untruncated text an outward filing would send; --show is the same plus a readable
+#   preview of every issue (title, labels, body) on stderr.
 # Exit: 0 ok · 2 usage · 5 plan/set not found · 7 refused by a sub-script · 1 other.
 set -euo pipefail
 # shellcheck source=lib/prelude.sh
 . "$(dirname "$0")/lib/prelude.sh"
 OPS="$(cd "$(dirname "$0")" && pwd)"
 
-usage() { fail "$EX_USAGE" usage "usage: milestone-sync.sh --project <group/project> --run <id> (--plan <plan.md> | --issues <set.json>) [--milestone <title>] [--sha <ref>] [--project-url <url>] [--dry-run]${1:+ — $1}"; }
-PROJECT=""; RUN=""; PLAN_PATH=""; SET_PATH=""; MILESTONE=""; DRY=false; SHA=""; PROJECT_URL=""
+usage() { fail "$EX_USAGE" usage "usage: milestone-sync.sh --project <group/project> --run <id> (--plan <plan.md> | --issues <set.json>) [--milestone <title>] [--sha <ref>] [--project-url <url>] [--dry-run | --show]${1:+ — $1}"; }
+PROJECT=""; RUN=""; PLAN_PATH=""; SET_PATH=""; MILESTONE=""; DRY=false; SHA=""; PROJECT_URL=""; SHOW=false
 while [ $# -gt 0 ]; do
   case "$1" in
     --project) [ $# -ge 2 ] || usage "--project needs a value"; PROJECT="$2"; shift 2 ;;
@@ -38,6 +41,7 @@ while [ $# -gt 0 ]; do
     --sha) [ $# -ge 2 ] || usage; SHA="$2"; shift 2 ;;
     --project-url) [ $# -ge 2 ] || usage; PROJECT_URL="$2"; shift 2 ;;
     --dry-run) DRY=true; shift ;;
+    --show) DRY=true; SHOW=true; shift ;;   # a dry run plus a readable preview per issue on stderr (#88)
     -h|--help) usage ;;
     *) usage "unknown argument: $1" ;;
   esac
@@ -136,8 +140,17 @@ for ((i = 0; i < N; i++)); do
   R="$(bash "$OPS/issue-upsert.sh" "${args[@]}" "${DRYARG[@]}")" || { rc=$?; err "issue-upsert failed for $unit"; printf '%s\n' "$R"; exit "$rc"; }
   iid="$(printf '%s' "$R" | jq -c '.iid // null')"
   MAP="$(printf '%s' "$MAP" | jq -c --arg u "$unit" --argjson iid "$iid" '. + {($u): $iid}')"
-  ISSUES="$(jq -cn --argjson a "$ISSUES" --arg u "$unit" --argjson r "$R" --argjson is "$IS" \
-    '$a + [{unit: $u, iid: ($r.iid // null), action: $r.action, web_url: ($r.web_url // null), milestone: ($is.milestone // null), assignee: ($r.assignee // $is.assignee // null), due_date: ($r.due_date // $is.due_date // null), blocked_by_units: ($is.blocked_by // [])}]')"
+  # the review surface before an outward filing (#88): the exact text, never truncated. An
+  # update's dry run proposes only the description, so title and labels come from the set.
+  PROPOSED="$(printf '%s' "$R" | jq -c --argjson is "$IS" --arg l "$labels" 'if .proposed then {title: (.proposed.title // $is.title),
+    labels: ((.proposed.labels // $l) | split(",") | map(select(. != ""))), description: .proposed.description, milestone: ($is.milestone // null)} else null end')"
+  if [ "$SHOW" = true ] && [ "$PROPOSED" != null ]; then
+    { printf -- '--- %s  [%s]\nlabels: %s\n\n' "$(printf '%s' "$PROPOSED" | jq -r '.title')" "$(printf '%s' "$R" | jq -r '.action')" \
+        "$(printf '%s' "$PROPOSED" | jq -r '.labels | join(", ")')"; printf '%s' "$PROPOSED" | jq -r '.description'; } >&2
+  fi
+  ISSUES="$(jq -cn --argjson a "$ISSUES" --arg u "$unit" --argjson r "$R" --argjson is "$IS" --argjson p "$PROPOSED" --argjson d "$DRY" \
+    '$a + [{unit: $u, iid: ($r.iid // null), action: $r.action, web_url: ($r.web_url // null), milestone: ($is.milestone // null), assignee: ($r.assignee // $is.assignee // null), due_date: ($r.due_date // $is.due_date // null), blocked_by_units: ($is.blocked_by // [])}
+           + (if $d then {proposed: $p} else {} end)]')"
 done
 
 # --- links: every blocked_by edge, resolved to iids (second pass) ----------------------------
