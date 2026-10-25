@@ -122,6 +122,7 @@ TAGSH="$ROOT/scripts/tag.sh"; T="$SCRATCH/tagrepo"; R="$SCRATCH/tagremote.git"
 git init -q --bare "$R"; git -C "$R" symbolic-ref HEAD refs/heads/main
 git clone -q "$R" "$T" 2>/dev/null; t() { git -C "$T" -c user.name=t -c user.email=t@t -c commit.gpgsign=false "$@"; }
 t checkout -q -b main; mkdir -p "$T/.claude-plugin"
+t config user.name t; t config user.email t@t   # tag.sh runs plain git tag -a; CI has no global identity
 printf '{\n  "name": "silkops",\n  "version": "0.3.0"\n}\n' >"$T/.claude-plugin/plugin.json"
 printf '{\n  "plugins": [\n    {\n      "name": "silkops",\n      "version": "0.3.0"\n    }\n  ]\n}\n' >"$T/.claude-plugin/marketplace.json"
 t add -A; t commit -qm "release: 0.3.0"; t push -q -u origin main 2>/dev/null; t remote set-head origin -a >/dev/null 2>&1
