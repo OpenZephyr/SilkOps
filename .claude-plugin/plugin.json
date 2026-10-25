@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "silkops",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "SilkOps: dev-loop skills for coding agents over glab, gh and Gitea; ships, watches, triages and files issues, never merges",
   "author": {
     "name": "Aqua",
