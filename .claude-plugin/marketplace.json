@@ -11,7 +11,7 @@
     {
       "name": "silkops",
       "source": "./",
-      "description": "SilkOps: dev-loop skills for coding agents over glab, gh and Gitea; ships, watches, triages and files issues, never merges",
+      "description": "SilkOps: delivery skills for coding agents on GitLab and GitHub; ships, watches, triages and files issues, never merges",
       "version": "0.4.0"
     }
   ]
