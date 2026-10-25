@@ -27,5 +27,7 @@ a closed issue is never edited.
 
 ## Guardrails
 
+- Before filing, run `verify-findings`: take only its `pass_through[]`, body text carries the
+  corrected claim and its evidence pointers, not the review's original wording.
 - The milestone is the caller's; never invent one. Keys are identity; titles may change.
 - No run id in the result: key on basename plus git SHA and say so.
