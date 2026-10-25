@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tier 1 tests for the release tooling: scripts/bump.sh, scripts/lib/release-notes.sh,
+# Tier 1 tests for the release tooling: scripts/bump.sh, scripts/tag.sh, scripts/lib/release-notes.sh,
 # scripts/release.sh and scripts/github-release.sh. Offline: a scratch git repo with two fake tags
 # stands in for the real history; gh and curl are never reached (dry runs and refusals only).
 set -uo pipefail
@@ -68,7 +68,7 @@ else fail "R3" "rc=$(rc_of r3)/$(rc_of r3b)/$(rc_of r3c) out=$(out_of r3)"; fi
 # R4: the real bump sets both versions with 2-space indentation and commits `release: X.Y.Z` on the branch, pushing nothing
 run r4 0.3.0
 if [ "$(rc_of r4)" = 0 ] && out_of r4 | jq -e '.ok == true and .version == "0.3.0" and .previous_tag == "silkops-harness--v0.2.0" and .issues_closed == [1, 2]
-      and (.commit | test("^[0-9a-f]{40}$")) and .branch == "release/0.3.0" and (.next | test("claude plugin tag --push"))' >/dev/null \
+      and (.commit | test("^[0-9a-f]{40}$")) and .branch == "release/0.3.0" and (.next | test("scripts/tag.sh"))' >/dev/null \
   && [ "$(out_of r4 | jq -r .commit)" = "$(g rev-parse HEAD)" ] && [ "$(g log -1 --format=%s)" = "release: 0.3.0" ] \
   && [ "$(jq -r .version "$G/.claude-plugin/plugin.json")" = 0.3.0 ] && [ "$(jq -r '.plugins[0].version' "$G/.claude-plugin/marketplace.json")" = 0.3.0 ] \
   && grep -x '  "version": "0.3.0",' "$G/.claude-plugin/plugin.json" >/dev/null && grep -x '      "version": "0.3.0"' "$G/.claude-plugin/marketplace.json" >/dev/null \
@@ -116,6 +116,31 @@ if [ "$(rc_of r8)" = 0 ] && out_of r8 | jq -e --arg v "$pv" '.ok == true and .dr
   && [ "$(cat "$SCRATCH/r8/rc3")" = 2 ]; then
   pass "R8 github-release.sh --dry-run prints the plan (title, notes file, create command; edit command with --update); a bad tag exits 2"
 else fail "R8" "rc=$(rc_of r8)/$(cat "$SCRATCH/r8/rc2")/$(cat "$SCRATCH/r8/rc3") out=$(out_of r8) out2=$(cat "$SCRATCH/r8/out2")"; fi
+
+# R9: tag.sh — refused off main, when behind the remote, or when the tag exists; cuts and pushes an annotated tag at the remote's head
+TAGSH="$ROOT/scripts/tag.sh"; T="$SCRATCH/tagrepo"; R="$SCRATCH/tagremote.git"
+git init -q --bare "$R"; git -C "$R" symbolic-ref HEAD refs/heads/main
+git clone -q "$R" "$T" 2>/dev/null; t() { git -C "$T" -c user.name=t -c user.email=t@t -c commit.gpgsign=false "$@"; }
+t checkout -q -b main; mkdir -p "$T/.claude-plugin"
+t config user.name t; t config user.email t@t   # tag.sh runs plain git tag -a; CI has no global identity
+printf '{\n  "name": "silkops",\n  "version": "0.3.0"\n}\n' >"$T/.claude-plugin/plugin.json"
+printf '{\n  "plugins": [\n    {\n      "name": "silkops",\n      "version": "0.3.0"\n    }\n  ]\n}\n' >"$T/.claude-plugin/marketplace.json"
+t add -A; t commit -qm "release: 0.3.0"; t push -q -u origin main 2>/dev/null; t remote set-head origin -a >/dev/null 2>&1
+trun() { local n="$1"; shift; mkdir -p "$SCRATCH/$n"; (cd "$T" && bash "$TAGSH" "$@") >"$SCRATCH/$n/out" 2>"$SCRATCH/$n/err"; echo $? >"$SCRATCH/$n/rc"; }
+t checkout -q -b release/0.3.0; trun r9a; t checkout -q main                                   # off main
+trun r9b --dry-run; dry_tags="$(t tag)"                                                          # plan only: no tag yet
+t commit -q --allow-empty -m "local only"; trun r9c; t reset -q --hard origin/main               # ahead of the remote
+trun r9d                                                                                         # the real tag
+trun r9e                                                                                         # again: exists
+if [ "$(rc_of r9a)" = 7 ] && out_of r9a | jq -e '.error == "not_default_branch"' >/dev/null \
+  && [ "$(rc_of r9b)" = 0 ] && out_of r9b | jq -e '.dry_run == true and .tag == "silkops-harness--v0.3.0" and .pushed == false' >/dev/null && [ -z "$dry_tags" ] \
+  && [ "$(rc_of r9c)" = 7 ] && out_of r9c | jq -e '.error == "behind_remote"' >/dev/null \
+  && [ "$(rc_of r9d)" = 0 ] && out_of r9d | jq -e '.ok == true and .version == "0.3.0" and .tag == "silkops-harness--v0.3.0" and .pushed == true' >/dev/null \
+  && [ "$(t cat-file -t silkops-harness--v0.3.0)" = tag ] && [ "$(t tag -l --format='%(contents:subject)' silkops-harness--v0.3.0)" = "SilkOps 0.3.0" ] \
+  && git -C "$R" rev-parse -q --verify refs/tags/silkops-harness--v0.3.0 >/dev/null && [ "$(out_of r9d | jq -r .commit)" = "$(t rev-parse HEAD)" ] \
+  && [ "$(rc_of r9e)" = 7 ] && out_of r9e | jq -e '.error == "tag_exists"' >/dev/null; then
+  pass "R9 tag.sh refuses a non-default branch, a HEAD ahead of the remote and an existing tag (exit 7); cuts annotated SilkOps 0.3.0 and pushes only the tag"
+else fail "R9" "rc=$(rc_of r9a)/$(rc_of r9b)/$(rc_of r9c)/$(rc_of r9d)/$(rc_of r9e) d=$(out_of r9d) e=$(err_of r9d | tr '\n' '|') c=$(out_of r9c)"; fi
 
 echo "test-release: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

@@ -15,8 +15,11 @@
      lines close, then the subjects grouped by type) and commits `release: X.Y.Z`. It refuses a
      dirty tree or the default branch and never pushes.
   2. Ship the branch as an MR; merge it.
-  3. On main: `claude plugin tag --push` creates and pushes `silkops-harness--vX.Y.Z` (the tag
-     format is pinned by the image factory in `ci-cd`; do not change it).
+  3. On main, at the merge commit: `scripts/tag.sh` (try `--dry-run` first) creates the annotated
+     tag `silkops-harness--vX.Y.Z` from the manifests' version and pushes only that ref. The tag
+     format is pinned by the image factory in `ci-cd`; do not change it, and do not use
+     `claude plugin tag`: since the plugin id is `silkops` it cuts `silkops--vX.Y.Z`, which no
+     release rule matches.
   4. CI on the tag: the `release` job publishes the tarball, its sha256, the runbook and the notes
      to the generic package registry and creates the GitLab Release (updates it on 409). The
      `github-release` job runs only when a masked `GH_TOKEN` CI variable exists and publishes the

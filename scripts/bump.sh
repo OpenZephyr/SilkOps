@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # bump.sh — prepare a release: set the version in both manifests, write the release notes, commit.
 #
-# Usage: bump.sh X.Y.Z [--dry-run] [--tag]
+# Usage: bump.sh X.Y.Z [--dry-run]
 #
 # Runs against the repository of the cwd (its toplevel). Refuses (exit 7) a dirty tree, the default
 # branch (the bump travels by MR; the tag is cut on main afterwards) and a version whose tag
@@ -9,20 +9,19 @@
 # file under dist/. Sets `version` in .claude-plugin/plugin.json and the plugin entry in
 # .claude-plugin/marketplace.json with jq (2-space indent), writes dist/notes-X.Y.Z.md from the
 # history since the previous silkops-harness--v* tag (scripts/lib/release-notes.sh) and prints it
-# on stderr, then commits `release: X.Y.Z` on the current branch. Never pushes. The tag is
-# `claude plugin tag --push` on main after the merge: printed as `next`, run only with --tag.
+# on stderr, then commits `release: X.Y.Z` on the current branch. Never pushes. The tag is cut by
+# scripts/tag.sh on main after the merge (not `claude plugin tag`, which names it `silkops--v…`).
 # One JSON object on stdout: {version, previous_tag, tag, notes_file, commit, issues_closed, next}.
 set -euo pipefail
 # shellcheck source=../ops/lib/prelude.sh
 . "$(cd "$(dirname "$0")/.." && pwd)/ops/lib/prelude.sh"
 # shellcheck source=../scripts/lib/release-notes.sh
 . "$(cd "$(dirname "$0")" && pwd)/lib/release-notes.sh"
-usage() { fail "$EX_USAGE" usage "usage: bump.sh X.Y.Z [--dry-run] [--tag]${1:+ — $1}"; }
-VERSION=""; DRY=false; TAG=false
+usage() { fail "$EX_USAGE" usage "usage: bump.sh X.Y.Z [--dry-run]${1:+ — $1}"; }
+VERSION=""; DRY=false
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY=true; shift ;;
-    --tag) TAG=true; shift ;;
     -*) usage "unknown argument: $1" ;;
     *) [ -z "$VERSION" ] || usage "one version only"; VERSION="$1"; shift ;;
   esac
@@ -71,15 +70,6 @@ git -c commit.gpgsign=false commit -q -m "release: $VERSION" >/dev/null
 sha="$(git rev-parse HEAD)"
 err "committed release: $VERSION ($sha) on $branch; not pushed"
 
-next="ship $branch as an MR; after the merge, on $default_branch: claude plugin tag --push"
-if [ "$TAG" = true ]; then
-  if command -v claude >/dev/null 2>&1; then
-    err "running: claude plugin tag --push"
-    claude plugin tag --push >&2 || fail "$EX_OTHER" tag_failed "claude plugin tag --push failed"
-    next="CI publishes the GitLab package + release for $tag (and the GitHub release when GH_TOKEN is set)"
-  else
-    err "--tag: claude is not on PATH; run 'claude plugin tag --push' yourself"
-  fi
-fi
+next="ship $branch as an MR; after the merge, on $default_branch: scripts/tag.sh"
 result "$(jq -cn --arg v "$VERSION" --arg p "$prev" --arg t "$tag" --arg n "$notes" --arg c "$sha" --arg b "$branch" --argjson i "$issues" --arg x "$next" \
   '{version: $v, previous_tag: (if $p == "" then null else $p end), tag: $t, notes_file: $n, commit: $c, branch: $b, issues_closed: $i, next: $x}')"
