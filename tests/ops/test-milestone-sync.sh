@@ -73,5 +73,20 @@ else fail "S6" "rc=$(rc_of s6) out=$(out_of s6 | head -c 900) writes=$(writes_of
 run_case s6b sync-fresh -- --project "$PROJECT" --plan "$MPLAN" --run r9 --milestone "One" --dry-run
 if [ "$(rc_of s6b)" = 2 ] && [ "$(calls_of s6b)" = 0 ]; then pass "S6b --milestone with a multi-milestone plan -> exit 2"; else fail "S6b" "rc=$(rc_of s6b)"; fi
 
+# S7 (#90): {{link:path:a-b}} in a body becomes a permalink pinned at --sha (a ref resolves) at the
+# --project-url; unknown placeholders stay verbatim; HEAD is the default sha
+cat >"$SCRATCH/links.json" <<'JSON'
+{"plan": "adhoc-x", "milestone": "Harness v0.1",
+ "issues": [{"unit": "A1", "title": "Linked", "body": "At {{link:ops/link.sh:3-4}} and {{link:README.md}}; keep {{other}}.\n", "labels": ["roadmap"]}]}
+JSON
+HEAD_SHA="$(git -C "$ROOT" rev-parse HEAD)"
+run_case s7 sync-two -- --project "$PROJECT" --issues "$SCRATCH/links.json" --run r9 --sha HEAD --project-url https://gl.example/g/p
+run_case s7b sync-two -- --project "$PROJECT" --issues "$SCRATCH/links.json" --run r9
+if [ "$(rc_of s7)" = 0 ] && body_of s7 2 | jq -e --arg u "https://gl.example/g/p/-/blob/$HEAD_SHA/ops/link.sh#L3-4" --arg w "https://gl.example/g/p/-/blob/$HEAD_SHA/README.md" \
+      '.body.description | contains("At " + $u + " and " + $w + "; keep {{other}}.")' >/dev/null \
+  && [ "$(rc_of s7b)" = 0 ] && body_of s7b 2 | jq -e --arg u "https://gitlab.com/$PROJECT/-/blob/$HEAD_SHA/ops/link.sh#L3-4" '.body.description | contains($u)' >/dev/null; then
+  pass "S7 (#90) {{link:…}} pinned at --sha on --project-url; HEAD and the known host by default; {{other}} verbatim"
+else fail "S7" "rc=$(rc_of s7)/$(rc_of s7b) body=$(body_of s7 2 2>/dev/null | head -c 600) err=$(err_of s7 | head -3)"; fi
+
 echo "test-milestone-sync: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

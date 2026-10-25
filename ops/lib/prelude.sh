@@ -108,6 +108,27 @@ require_project() {
 # urlenc <string> — percent-encode a path component (group/project → group%2Fproject).
 urlenc() { jq -rn --arg s "$1" '$s | @uri'; }
 
+# project_url_default <group/project> — the project's web URL built from the provider's known
+# host, no network (#90): SILKOPS_PROJECT_URL wins; gitlab https://$GITLAB_HOST/<P>, github
+# https://github.com/<P>, gitea $SILKOPS_GITEA_URL/<P> (else the origin remote's host). Prints
+# nothing when no host is known; the caller decides whether that is fatal.
+project_url_default() {
+  local p="$1" h r
+  if [ -n "${SILKOPS_PROJECT_URL:-}" ]; then printf '%s' "${SILKOPS_PROJECT_URL%/}"; return 0; fi
+  case "${SILKOPS_PROVIDER:-gitlab}" in
+    gitlab) h="${GITLAB_HOST:-gitlab.com}"; h="${h#https://}"; h="${h#http://}"; printf 'https://%s/%s' "${h%/}" "$p" ;;
+    github) printf 'https://github.com/%s' "$p" ;;
+    gitea)
+      if [ -n "${SILKOPS_GITEA_URL:-}" ]; then printf '%s/%s' "${SILKOPS_GITEA_URL%/}" "$p"; return 0; fi
+      r="$(git remote get-url origin 2>/dev/null || true)"
+      case "$r" in
+        https://*) r="${r#https://}"; printf 'https://%s/%s' "${r%%/*}" "$p" ;;
+        *@*:*) r="${r#*@}"; printf 'https://%s/%s' "${r%%:*}" "$p" ;;
+        *) return 0 ;;
+      esac ;;
+  esac
+}
+
 # silkops_marker <plan-basename> <unit> <run-id> — provenance comment carried by
 # every harness-written object.
 silkops_marker() {

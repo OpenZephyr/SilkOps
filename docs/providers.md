@@ -22,6 +22,7 @@ where one exists, so nothing downstream breaks and nothing is renamed.
 | job-token allow-list | project setting | not a concept: `not_applicable`, exit 0, nothing written | not a concept |
 | protected branch (read) | `protected_branches` | default-branch protection, summarised as `protection {required_reviews, required_checks, enforce_admins}` | branch protections |
 | identity | glab session, `SILKOPS_CI_TOKEN` in CI | `gh` login or `GH_TOKEN` | `GITEA_TOKEN` |
+| permalink (`link`, `{{link:path:a-b}}` in bodies) | `<web_url>/-/blob/<sha>/<path>#L<a>-<b>` | `<web_url>/blob/<sha>/<path>#L<a>-L<b>` | `<web_url>/src/commit/<sha>/<path>#L<a>-L<b>` |
 
 ## Status values
 

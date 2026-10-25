@@ -12,6 +12,10 @@
 # --issues: {"plan": "adhoc-<slug>", "milestone": <title|null>, "issues": [{unit, title, body,
 #   labels[], assignee, due_date, blocked_by[unit...]}]}: the marker namespace for sets with no
 #   plan; bodies verbatim; blocked_by resolved to real iids after the upsert pass.
+# Bodies may carry `{{link:<path>}}`, `{{link:<path>:<a>}}` or `{{link:<path>:<a>-<b>}}` (#90):
+#   expand-links.py turns each into the host's permalink pinned at --sha (default: HEAD of the
+#   cwd; outside a git repo there is no sha, so placeholders stay verbatim and stderr says so).
+#   The project URL is --project-url, else SILKOPS_PROJECT_URL, else the provider's known host.
 # Composes milestone-upsert.sh, issue-upsert.sh and issue-link.sh; never merges, never edits a
 # closed issue (those scripts refuse). One JSON report: {milestone, milestones[], issues[], links[]}
 # (`milestone` is the single one, null when the plan declares several).
@@ -21,8 +25,8 @@ set -euo pipefail
 . "$(dirname "$0")/lib/prelude.sh"
 OPS="$(cd "$(dirname "$0")" && pwd)"
 
-usage() { fail "$EX_USAGE" usage "usage: milestone-sync.sh --project <group/project> --run <id> (--plan <plan.md> | --issues <set.json>) [--milestone <title>] [--dry-run]${1:+ — $1}"; }
-PROJECT=""; RUN=""; PLAN_PATH=""; SET_PATH=""; MILESTONE=""; DRY=false
+usage() { fail "$EX_USAGE" usage "usage: milestone-sync.sh --project <group/project> --run <id> (--plan <plan.md> | --issues <set.json>) [--milestone <title>] [--sha <ref>] [--project-url <url>] [--dry-run]${1:+ — $1}"; }
+PROJECT=""; RUN=""; PLAN_PATH=""; SET_PATH=""; MILESTONE=""; DRY=false; SHA=""; PROJECT_URL=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --project) [ $# -ge 2 ] || usage "--project needs a value"; PROJECT="$2"; shift 2 ;;
@@ -31,6 +35,8 @@ while [ $# -gt 0 ]; do
     --plan) [ $# -ge 2 ] || usage; PLAN_PATH="$2"; shift 2 ;;
     --issues) [ $# -ge 2 ] || usage; SET_PATH="$2"; shift 2 ;;
     --milestone) [ $# -ge 2 ] || usage; MILESTONE="$2"; shift 2 ;;
+    --sha) [ $# -ge 2 ] || usage; SHA="$2"; shift 2 ;;
+    --project-url) [ $# -ge 2 ] || usage; PROJECT_URL="$2"; shift 2 ;;
     --dry-run) DRY=true; shift ;;
     -h|--help) usage ;;
     *) usage "unknown argument: $1" ;;
@@ -42,6 +48,23 @@ if [ -n "$PLAN_PATH" ] && [ -n "$SET_PATH" ]; then usage "pass exactly one of --
 [ -n "$PLAN_PATH$SET_PATH" ] || usage "pass exactly one of --plan or --issues"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/silkops-msync.XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
 DRYARG=(); [ "$DRY" = false ] || DRYARG=(--dry-run)
+
+# --- pinned links (#90): the sha every {{link:…}} is pinned at, and the project URL -----------------
+# An explicit --sha that does not resolve is a usage error; the default is HEAD when the cwd is a
+# repo, else no expansion at all (placeholders stay verbatim, one stderr note).
+if [ -n "$SHA" ]; then
+  SHA="$(git rev-parse --verify --quiet "${SHA}^{commit}" 2>/dev/null)" || usage "--sha does not resolve to a commit here"
+elif ! SHA="$(git rev-parse --verify --quiet 'HEAD^{commit}' 2>/dev/null)"; then
+  SHA=""; err "note: not inside a git repository and no --sha; {{link:…}} placeholders are left verbatim"
+fi
+[ -n "$PROJECT_URL" ] || PROJECT_URL="$(project_url_default "$PROJECT")"
+# expand_links <body-file> — in place; a no-op without a sha, a project URL or a placeholder
+expand_links() {
+  [ -n "$SHA" ] && [ -n "$PROJECT_URL" ] && grep -F '{{link:' "$1" >/dev/null || return 0
+  python3 "$OPS/expand-links.py" --project-url "$PROJECT_URL" --provider "$SILKOPS_PROVIDER" --sha "$SHA" <"$1" >"$1.x" \
+    || fail "$EX_OTHER" expand_failed "expand-links.py failed on $(basename "$1")"
+  mv "$1.x" "$1"
+}
 
 # --- the set: {plan, milestone, issues[{unit,title,body,labels,assignee,due_date,blocked_by}]} ---
 if [ -n "$PLAN_PATH" ]; then
@@ -103,7 +126,7 @@ ISSUES='[]'; MAP='{}'
 for ((i = 0; i < N; i++)); do
   IS="$(printf '%s' "$SET" | jq -c ".issues[$i]")"
   unit="$(printf '%s' "$IS" | jq -r '.unit')"; ulabel="$(printf '%s' "$unit" | tr '[:upper:]' '[:lower:]')"
-  printf '%s' "$IS" | jq -r '.body' >"$TMP/body-$i.md"
+  printf '%s' "$IS" | jq -r '.body' >"$TMP/body-$i.md"; expand_links "$TMP/body-$i.md"
   labels="$(printf '%s' "$IS" | jq -r --arg u "$ulabel" '((.labels // []) + [$u]) | unique | join(",")')"
   args=(--project "$PROJECT" --marker-unit "$unit" --plan "$PLAN" --run "$RUN" --title "$(printf '%s' "$IS" | jq -r '.title')" --body-file "$TMP/body-$i.md" --labels "$labels")
   ims="$(printf '%s' "$IS" | jq -r '.milestone // ""')"; [ -z "$ims" ] || ims="$(printf '%s' "$MS_MAP" | jq -r --arg t "$ims" '.[$t] // ""')"
