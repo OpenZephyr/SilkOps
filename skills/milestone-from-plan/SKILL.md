@@ -13,26 +13,25 @@ is the marker, then the `u<N>` label, never the title. Closed issues are never e
 ## Steps
 
 0. Pre-flight once: `silkops token-check --project P --expect-role Developer` (exit 4 names the
-   role needed); mention only `operator.username` when `operator.exists` is true.
+   role needed); mention `operator.username` only when `operator.exists` is true.
 1. `silkops milestone-sync --project P --plan <path> --run <id> [--milestone <title>] --dry-run`:
-   read milestone action, unit → iid → action, links. Then the same call without `--dry-run`.
-   The dry run shows the exact text (`proposed`; `--show` prints it); read it before filing on
-   someone else's repo.
-   The script parses the units, upserts the milestone (title from the plan's `title:`) and every
-   issue, links every `depends_on` edge as `blocks`. Never loop over units in the session.
-2. `fallback: relates_to` on a link means the project has no blocking links; say so. Exit 7
-   (closed milestone or issue, ambiguous identity): stop and ask; never create a look-alike.
+   read milestone action, unit → iid → action, links, and the exact text (`proposed`; `--show`
+   prints it) before filing on someone else's repo. Then the same call without `--dry-run`.
+   It upserts the milestone (title from the plan's `title:`) and every issue and links every
+   `depends_on` edge as `blocks`. Never loop over units in the session.
+2. `fallback: relates_to` on a link: the project has no blocking links; say so. Exit 7 (closed
+   milestone or issue, ambiguous identity): stop and ask; never create a look-alike.
 3. Re-sync after the plan changed: the same call. Only managed regions change, human text
    survives, an unchanged plan is zero writes. A unit that left the plan: `silkops note` naming
-   the plan's git SHA, then `glab issue close <iid> -R P` if open; never reopen.
+   the plan's git SHA, then `silkops issue-close --project P --iid <iid>`; never reopen.
 4. Report the milestone URL and the unit → iid → action table from the JSON.
 
 ## Guardrails
 
 - A plan with `## M<n> · <title>` headings and `### M<n>-<nn>` units yields one milestone per
-  heading (`milestones[]`, `milestone` null); never pass `--milestone` to it.
-- Hosts: GitHub milestones are by number; it has no blocking links, so edges come back as `fallback: managed_region`.
+  heading (`milestones[]`, `milestone` null); `--milestone` is refused there.
+- GitHub milestones are by number; it has no blocking links, so edges come back as `fallback: managed_region`.
 - `{{link:<path>:<a>-<b>}}` in a body becomes a permalink pinned at HEAD (`--sha` pins another);
-  `silkops link --project P --path <p> --line a-b` makes one by hand.
-- Every object carries the marker (`scripts/audit-milestone.sh` checks it).
-- No raw `glab api` calls here; a missing operation belongs in `ops/`, not in this skill.
+  `silkops link` makes one by hand.
+- Every object carries the marker (`scripts/audit-milestone.sh` checks it). No raw `glab api`
+  here; a missing operation belongs in `ops/`.
